@@ -27,11 +27,18 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/internal/grpctest"
 	"google.golang.org/grpc/internal/proxyattributes"
 	"google.golang.org/grpc/internal/resolver/delegatingresolver"
+	"google.golang.org/grpc/internal/stubserver"
 	"google.golang.org/grpc/internal/testutils"
 	"google.golang.org/grpc/internal/transport/networktype"
+	testgrpc "google.golang.org/grpc/interop/grpc_testing"
+	testpb "google.golang.org/grpc/interop/grpc_testing"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
 	"google.golang.org/grpc/serviceconfig"
@@ -939,5 +946,86 @@ func (s) TestDelegatingResolverForMixNetworkType(t *testing.T) {
 
 	if diff := cmp.Diff(gotState, wantState); diff != "" {
 		t.Fatalf("Unexpected state from delegating resolver. Diff (-got +want):\n%v", diff)
+	}
+}
+
+func startBackendServer(t *testing.T) *stubserver.StubServer {
+	t.Helper()
+	backend := &stubserver.StubServer{
+		EmptyCallF: func(context.Context, *testpb.Empty) (*testpb.Empty, error) { return &testpb.Empty{}, nil },
+	}
+	if err := backend.StartServer(); err != nil {
+		t.Fatalf("failed to start backend: %v", err)
+	}
+	t.Logf("Started TestService backend at: %q", backend.Address)
+	return backend
+}
+
+const unresolvedTargetURI = "example:///test.com"
+
+var cnt int
+
+func (s) TestEshitatest(t *testing.T) {
+	backend := startBackendServer(t)
+	backend2 := startBackendServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+	kal := keepalive.ClientParameters{
+		Time:                10 * time.Second,
+		Timeout:             10 * time.Second,
+		PermitWithoutStream: true,
+	}
+	dialBackoffConfig := backoff.Config{
+		BaseDelay:  10 * time.Millisecond,
+		Multiplier: 5,
+		Jitter:     0.1,
+		MaxDelay:   20 * time.Second,
+	}
+	cp := grpc.ConnectParams{
+		Backoff:           dialBackoffConfig,
+		MinConnectTimeout: 1 * time.Second,
+	}
+	cnt = 0
+	r := manual.NewBuilderWithScheme("example")
+	r.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: backend.Address}, {Addr: backend2.Address}}})
+	r.ResolveNowCallback = func(resolver.ResolveNowOptions) {
+		t.Log("ResolveNow called")
+		t.Log(time.Now())
+		var x []resolver.Address
+		if cnt%2 == 0 {
+			x = []resolver.Address{
+				{Addr: backend2.Address}, {Addr: backend.Address},
+			}
+		} else {
+			x = []resolver.Address{{Addr: backend.Address},
+				{Addr: backend2.Address}}
+		}
+		cnt++
+		r.UpdateState(resolver.State{
+			Addresses:     x,
+			ServiceConfig: &serviceconfig.ParseResult{},
+		})
+	}
+	opts := []grpc.DialOption{
+		grpc.WithBlock(),
+		grpc.WithDisableRetry(),
+		grpc.WithDefaultCallOptions(grpc.WaitForReady(true)),
+		grpc.WithKeepaliveParams(kal),
+		grpc.WithConnectParams(cp),
+		grpc.WithResolvers(r),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+
+	conn, err := grpc.NewClient(unresolvedTargetURI, opts...)
+	if err != nil {
+		t.Fatalf("grpc.NewClient(%s) failed: %v", unresolvedTargetURI, err)
+	}
+	client := testgrpc.NewTestServiceClient(conn)
+	backend.Stop()
+	backend2.Stop()
+	conn.Connect()
+
+	if _, err := client.EmptyCall(ctx, &testpb.Empty{}); err != nil {
+		t.Fatalf("EmptyCall() failed: %v", err)
 	}
 }

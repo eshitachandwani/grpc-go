@@ -1,0 +1,1459 @@
+ok  	google.golang.org/grpc/internal/resolver	(cached) [no tests to run]
+--- FAIL: Test (20.01s)
+    --- FAIL: Test/Eshitatest (20.01s)
+        tlogger.go:116: INFO server.go:690 [core] [Server #1]Server created  (t=+3.453625ms)
+        delegatingresolver_ext_test.go:969: Started TestService backend at: "127.0.0.1:65175"
+        tlogger.go:116: INFO server.go:886 [core] [Server #1 ListenSocket #2]ListenSocket created  (t=+3.738708ms)
+        tlogger.go:116: INFO server.go:690 [core] [Server #3]Server created  (t=+4.367083ms)
+        delegatingresolver_ext_test.go:970: Started TestService backend at: "127.0.0.1:65176"
+        tlogger.go:116: INFO clientconn.go:1690 [core] original dial target is: "example:///test.com"  (t=+4.429166ms)
+        tlogger.go:116: INFO server.go:886 [core] [Server #3 ListenSocket #4]ListenSocket created  (t=+4.462083ms)
+        tlogger.go:116: INFO clientconn.go:333 [core] [Channel #5]Channel created  (t=+4.477541ms)
+        tlogger.go:116: INFO clientconn.go:207 [core] [Channel #5]parsed dial target is: resolver.Target{URL:url.URL{Scheme:"example", Opaque:"", User:(*url.Userinfo)(nil), Host:"", Path:"/test.com", RawPath:"", OmitHost:false, ForceQuery:false, RawQuery:"", Fragment:"", RawFragment:""}}  (t=+4.518791ms)
+        tlogger.go:116: INFO clientconn.go:208 [core] [Channel #5]Channel authority set to "test.com"  (t=+4.530166ms)
+        tlogger.go:116: INFO server.go:822 [core] [Server #1 ListenSocket #2]ListenSocket deleted  (t=+4.633041ms)
+        tlogger.go:116: INFO server.go:822 [core] [Server #3 ListenSocket #4]ListenSocket deleted  (t=+4.670708ms)
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": null,
+              "Attributes": null
+            } (resolver returned new addresses)  (t=+4.790083ms)
+        tlogger.go:116: INFO balancer_wrapper.go:122 [core] [Channel #5]Channel switches to new LB policy "pick_first"  (t=+4.804625ms)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": null,
+              "Attributes": null
+            }  (t=+4.830291ms)
+        tlogger.go:116: INFO clientconn.go:563 [core] [Channel #5]Channel Connectivity change to CONNECTING  (t=+4.854125ms)
+        tlogger.go:116: INFO clientconn.go:866 [core] [Channel #5 SubChannel #6]Subchannel created  (t=+4.861583ms)
+        tlogger.go:116: INFO clientconn.go:333 [core] [Channel #5]Channel exiting idle mode  (t=+4.881291ms)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to CONNECTING  (t=+4.893125ms)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #6]Subchannel picks a new address "127.0.0.1:65175" to connect  (t=+4.904708ms)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65175\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+5.3155ms)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #6]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65175", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+5.327041ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+5.336666ms)
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000274308 backoff for 10ms  (t=+5.343375ms)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        tlogger.go:116: INFO clientconn.go:866 [core] [Channel #5 SubChannel #7]Subchannel created  (t=+5.357083ms)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to CONNECTING  (t=+5.370375ms)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #7]Subchannel picks a new address "127.0.0.1:65176" to connect  (t=+5.38ms)
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:13.631786 +0530 IST m=+0.010884834
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+5.456708ms)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+5.476833ms)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65176\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+5.540875ms)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #7]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65176", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+5.549458ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+5.55725ms)
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000032608 backoff for 10ms  (t=+5.562083ms)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        tlogger.go:116: INFO clientconn.go:563 [core] [Channel #5]Channel Connectivity change to TRANSIENT_FAILURE  (t=+5.5685ms)
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:13.631997 +0530 IST m=+0.011095584
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+5.582875ms)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+5.597916ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+16.404166ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+16.430458ms)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to CONNECTING  (t=+16.443875ms)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to CONNECTING  (t=+16.458375ms)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #7]Subchannel picks a new address "127.0.0.1:65176" to connect  (t=+16.471625ms)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #6]Subchannel picks a new address "127.0.0.1:65175" to connect  (t=+16.497416ms)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65175\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+16.766083ms)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #6]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65175", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+16.786333ms)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:13.643235 +0530 IST m=+0.022333584
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65176\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+16.806125ms)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #7]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65176", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+16.852625ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+16.865625ms)
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000274308 backoff for 53.300727ms  (t=+16.877458ms)
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+16.888125ms)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+16.928375ms)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+16.953833ms)
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:13.643382 +0530 IST m=+0.022480792
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000032608 backoff for 45.872104ms  (t=+16.966583ms)
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+16.990708ms)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+17.025583ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+63.900666ms)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to CONNECTING  (t=+63.955ms)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #7]Subchannel picks a new address "127.0.0.1:65176" to connect  (t=+63.969041ms)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65176\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+64.228ms)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #7]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65176", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+64.242958ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+64.256333ms)
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000032608 backoff for 248.239115ms  (t=+64.265666ms)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:13.690713 +0530 IST m=+0.069811501
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+64.314958ms)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+64.355333ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+70.990083ms)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to CONNECTING  (t=+71.081125ms)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #6]Subchannel picks a new address "127.0.0.1:65175" to connect  (t=+71.09125ms)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65175\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+71.371833ms)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #6]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65175", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+71.383583ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+71.394125ms)
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000274308 backoff for 238.822548ms  (t=+71.405041ms)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:13.697846 +0530 IST m=+0.076944459
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+71.442333ms)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+71.47225ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+311.382416ms)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to CONNECTING  (t=+311.558583ms)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #6]Subchannel picks a new address "127.0.0.1:65175" to connect  (t=+311.591958ms)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65175\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+312.350625ms)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #6]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65175", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+312.389208ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+312.429708ms)
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000274308 backoff for 1.25759215s  (t=+312.450708ms)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:13.938938 +0530 IST m=+0.318038167
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+312.595458ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+312.70725ms)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+312.74275ms)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to CONNECTING  (t=+312.857458ms)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #7]Subchannel picks a new address "127.0.0.1:65176" to connect  (t=+312.878791ms)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65176\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+313.63175ms)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #7]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65176", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+313.696041ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+313.7325ms)
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000032608 backoff for 1.189243213s  (t=+313.751416ms)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:13.940208 +0530 IST m=+0.319307501
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+313.8335ms)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+313.958ms)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+1.503212333s)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to CONNECTING  (t=+1.503373375s)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #7]Subchannel picks a new address "127.0.0.1:65176" to connect  (t=+1.503414875s)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65176\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+1.504184s)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #7]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65176", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+1.504223166s)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+1.504265833s)
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000032608 backoff for 5.88702913s  (t=+1.504341125s)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:15.130797 +0530 IST m=+1.509902209
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+1.504475291s)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+1.5045745s)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+1.571224333s)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to CONNECTING  (t=+1.571339083s)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #6]Subchannel picks a new address "127.0.0.1:65175" to connect  (t=+1.571372041s)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65175\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+1.572031291s)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #6]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65175", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+1.57206825s)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+1.572104375s)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:15.198562 +0530 IST m=+1.577667751
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000274308 backoff for 6.020425008s  (t=+1.572123125s)
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+1.572216041s)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+1.572417791s)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+7.392603916s)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to CONNECTING  (t=+7.392805375s)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #7]Subchannel picks a new address "127.0.0.1:65176" to connect  (t=+7.392860125s)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65176\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+7.393799791s)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #7]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65176", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+7.393872625s)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #7]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"  (t=+7.393959083s)
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000032608 backoff for 19.129394367s  (t=+7.394001541s)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:21.020444 +0530 IST m=+7.399576209
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+7.394203708s)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+7.394320333s)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+7.5937875s)
+        tlogger.go:116: INFO clientconn.go:1234 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to CONNECTING  (t=+7.593952375s)
+        tlogger.go:116: INFO clientconn.go:1354 [core] [Channel #5 SubChannel #6]Subchannel picks a new address "127.0.0.1:65175" to connect  (t=+7.594002125s)
+        tlogger.go:116: INFO clientconn.go:1412 [core] Creating new client transport to "{Addr: \"127.0.0.1:65175\", ServerName: \"test.com\", BalancerAttributes: {\"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>\": \"<%!p(bool=true)>\" }}": connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+7.594975833s)
+        tlogger.go:116: WARNING clientconn.go:1416 [core] [Channel #5 SubChannel #6]grpc: addrConn.createTransport failed to connect to {Addr: "127.0.0.1:65175", ServerName: "test.com", BalancerAttributes: {"<%!p(pickfirstleaf.managedByPickfirstKeyType={})>": "<%!p(bool=true)>" }}. Err: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+7.595037416s)
+        tlogger.go:116: INFO clientconn.go:1236 [core] [Channel #5 SubChannel #6]Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65175: connect: connection refused"  (t=+7.595102083s)
+        tlogger.go:116: INFO clientconn.go:1305 [core] eshita : addrConn 0x14000274308 backoff for 21.116054449s  (t=+7.595138208s)
+        delegatingresolver_ext_test.go:992: ResolveNow called
+        delegatingresolver_ext_test.go:993: 2025-05-20 16:13:21.221578 +0530 IST m=+7.600711167
+        tlogger.go:116: INFO resolver_wrapper.go:210 [core] [Channel #5]Resolver state updated: {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            } ()  (t=+7.59536225s)
+        tlogger.go:116: INFO pickfirstleaf.go:279 [pick-first-leaf-lb] [pick-first-leaf-lb 0x14000226120] Received new config {
+              "shuffleAddressList": false
+            }, resolver state {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:65175",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                },
+                {
+                  "Addr": "127.0.0.1:65176",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Endpoints": [
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65175",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                },
+                {
+                  "Addresses": [
+                    {
+                      "Addr": "127.0.0.1:65176",
+                      "ServerName": "",
+                      "Attributes": null,
+                      "BalancerAttributes": null,
+                      "Metadata": null
+                    }
+                  ],
+                  "Attributes": null
+                }
+              ],
+              "ServiceConfig": {
+                "Config": null,
+                "Err": null
+              },
+              "Attributes": null
+            }  (t=+7.595514666s)
+        delegatingresolver_ext_test.go:1032: EmptyCall() failed: rpc error: code = DeadlineExceeded desc = latest balancer error: connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:65176: connect: connection refused"
+        grpctest.go:45: Leaked goroutine: goroutine 22 [select]:
+            google.golang.org/grpc.(*addrConn).resetTransportAndUnlock(0x14000032608)
+            	/Users/emchandwani/grpc-go-emc/clientconn.go:1307 +0x4e0
+            google.golang.org/grpc.(*addrConn).connect(0x14000032608)
+            	/Users/emchandwani/grpc-go-emc/clientconn.go:942 +0x1a0
+            created by google.golang.org/grpc.(*acBalancerWrapper).Connect in goroutine 35
+            	/Users/emchandwani/grpc-go-emc/balancer_wrapper.go:354 +0x60
+        grpctest.go:45: Leaked goroutine: goroutine 33 [select]:
+            google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x1400020c2c0, {0x10162c430, 0x14000031d10})
+            	/Users/emchandwani/grpc-go-emc/internal/grpcsync/callback_serializer.go:88 +0xc4
+            created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 6
+            	/Users/emchandwani/grpc-go-emc/internal/grpcsync/callback_serializer.go:52 +0x118
+        grpctest.go:45: Leaked goroutine: goroutine 34 [select]:
+            google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x1400020c2f0, {0x10162c430, 0x1400023c000})
+            	/Users/emchandwani/grpc-go-emc/internal/grpcsync/callback_serializer.go:88 +0xc4
+            created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 6
+            	/Users/emchandwani/grpc-go-emc/internal/grpcsync/callback_serializer.go:52 +0x118
+        grpctest.go:45: Leaked goroutine: goroutine 35 [select]:
+            google.golang.org/grpc/internal/grpcsync.(*CallbackSerializer).run(0x1400020c320, {0x10162c430, 0x1400023c050})
+            	/Users/emchandwani/grpc-go-emc/internal/grpcsync/callback_serializer.go:88 +0xc4
+            created by google.golang.org/grpc/internal/grpcsync.NewCallbackSerializer in goroutine 6
+            	/Users/emchandwani/grpc-go-emc/internal/grpcsync/callback_serializer.go:52 +0x118
+        grpctest.go:45: Leaked goroutine: goroutine 67 [select]:
+            google.golang.org/grpc.(*addrConn).resetTransportAndUnlock(0x14000274308)
+            	/Users/emchandwani/grpc-go-emc/clientconn.go:1307 +0x4e0
+            google.golang.org/grpc.(*addrConn).connect(0x14000274308)
+            	/Users/emchandwani/grpc-go-emc/clientconn.go:942 +0x1a0
+            created by google.golang.org/grpc.(*acBalancerWrapper).Connect in goroutine 35
+            	/Users/emchandwani/grpc-go-emc/balancer_wrapper.go:354 +0x60
+        grpctest.go:76: Goroutine leak check disabled for future tests
+FAIL
+FAIL	google.golang.org/grpc/internal/resolver/delegatingresolver	20.569s
+ok  	google.golang.org/grpc/internal/resolver/dns	(cached) [no tests to run]
+?   	google.golang.org/grpc/internal/resolver/dns/internal	[no test files]
+?   	google.golang.org/grpc/internal/resolver/passthrough	[no test files]
+?   	google.golang.org/grpc/internal/resolver/unix	[no test files]
+FAIL
