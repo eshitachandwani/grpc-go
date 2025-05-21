@@ -991,18 +991,18 @@ func (s) TestEshitatest(t *testing.T) {
 	r.ResolveNowCallback = func(resolver.ResolveNowOptions) {
 		t.Log("ResolveNow called")
 		t.Log(time.Now())
-		var x []resolver.Address
+		var addresses []resolver.Address
 		if cnt%2 == 0 {
-			x = []resolver.Address{
+			addresses = []resolver.Address{
 				{Addr: backend2.Address}, {Addr: backend.Address},
 			}
 		} else {
-			x = []resolver.Address{{Addr: backend.Address},
+			addresses = []resolver.Address{{Addr: backend.Address},
 				{Addr: backend2.Address}}
 		}
 		cnt++
 		r.UpdateState(resolver.State{
-			Addresses:     x,
+			Addresses:     addresses,
 			ServiceConfig: &serviceconfig.ParseResult{},
 		})
 	}
@@ -1016,14 +1016,15 @@ func (s) TestEshitatest(t *testing.T) {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 
-	conn, err := grpc.NewClient(unresolvedTargetURI, opts...)
+	conn, err := grpc.Dial(unresolvedTargetURI, opts...)
 	if err != nil {
 		t.Fatalf("grpc.NewClient(%s) failed: %v", unresolvedTargetURI, err)
 	}
 	client := testgrpc.NewTestServiceClient(conn)
 	backend.Stop()
+	t.Log("First backend stopped")
 	backend2.Stop()
-	conn.Connect()
+	t.Log("Second backend stopped")
 
 	if _, err := client.EmptyCall(ctx, &testpb.Empty{}); err != nil {
 		t.Fatalf("EmptyCall() failed: %v", err)
