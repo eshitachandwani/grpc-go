@@ -1134,6 +1134,7 @@ func (cc *ClientConn) ResetConnectBackoff() {
 	conns := cc.conns
 	cc.mu.Unlock()
 	for ac := range conns {
+		logger.Infof("eshita : ResetConnectBackoff called on addrConn %p", ac)
 		ac.resetConnectBackoff()
 	}
 }
@@ -1286,6 +1287,7 @@ func (ac *addrConn) resetTransportAndUnlock() {
 	if err := ac.tryAllAddrs(acCtx, addrs, connectDeadline); err != nil {
 		// TODO: #7534 - Move re-resolution requests into the pick_first LB policy
 		// to ensure one resolution request per pass instead of per subconn failure.
+
 		ac.cc.resolveNow(resolver.ResolveNowOptions{})
 		ac.mu.Lock()
 		if acCtx.Err() != nil {
@@ -1300,7 +1302,7 @@ func (ac *addrConn) resetTransportAndUnlock() {
 		// Backoff.
 		b := ac.resetBackoff
 		ac.mu.Unlock()
-
+		logger.Infof("eshita : addrConn %p backoff for %v", ac, backoffFor)
 		timer := time.NewTimer(backoffFor)
 		select {
 		case <-timer.C:
@@ -1523,6 +1525,7 @@ func (ac *addrConn) startHealthCheck(ctx context.Context) {
 
 func (ac *addrConn) resetConnectBackoff() {
 	ac.mu.Lock()
+	logger.Infof("eshita : reset backoff channel close called on addrConn %p", ac)
 	close(ac.resetBackoff)
 	ac.backoffIdx = 0
 	ac.resetBackoff = make(chan struct{})
