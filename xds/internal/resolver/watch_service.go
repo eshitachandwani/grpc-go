@@ -27,10 +27,10 @@ import (
 type listenerWatcher struct {
 	resourceName string
 	cancel       func()
-	parent       *xdsResolver
+	parent       *xdsDependencyManager
 }
 
-func newListenerWatcher(resourceName string, parent *xdsResolver) *listenerWatcher {
+func newListenerWatcher(resourceName string, parent *xdsDependencyManager) *listenerWatcher {
 	lw := &listenerWatcher{resourceName: resourceName, parent: parent}
 	lw.cancel = xdsresource.WatchListener(parent.xdsClient, resourceName, lw)
 	return lw
@@ -53,16 +53,17 @@ func (l *listenerWatcher) AmbientError(err error, onDone func()) {
 
 func (l *listenerWatcher) stop() {
 	l.cancel()
-	l.parent.logger.Infof("Canceling watch on Listener resource %q", l.resourceName)
+	// l.parent.
+	logger.Infof("Canceling watch on Listener resource %q", l.resourceName)
 }
 
 type routeConfigWatcher struct {
 	resourceName string
 	cancel       func()
-	parent       *xdsResolver
+	parent       *xdsDependencyManager
 }
 
-func newRouteConfigWatcher(resourceName string, parent *xdsResolver) *routeConfigWatcher {
+func newRouteConfigWatcher(resourceName string, parent *xdsDependencyManager) *routeConfigWatcher {
 	rw := &routeConfigWatcher{resourceName: resourceName, parent: parent}
 	rw.cancel = xdsresource.WatchRouteConfig(parent.xdsClient, resourceName, rw)
 	return rw
@@ -88,5 +89,6 @@ func (r *routeConfigWatcher) AmbientError(err error, onDone func()) {
 
 func (r *routeConfigWatcher) stop() {
 	r.cancel()
-	r.parent.logger.Infof("Canceling watch on RouteConfiguration resource %q", r.resourceName)
+	// r.parent.
+	logger.Infof("Canceling watch on RouteConfiguration resource %q", r.resourceName)
 }

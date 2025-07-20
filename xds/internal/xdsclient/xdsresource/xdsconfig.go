@@ -15,52 +15,80 @@
  *
  */
 
-package resolver
+package xdsresource
 
-import "google.golang.org/grpc/xds/internal/xdsclient/xdsresource"
+import (
+	"google.golang.org/grpc/attributes"
+	"google.golang.org/grpc/resolver"
+)
 
 type XdsConfig struct {
 	// listener resource
-	listener xdsresource.ListenerUpdate
+	Listener ListenerUpdate
 	// RouteConfig resource.  Will be populated even if RouteConfig is
 	// inlined into the Listener resource.
-	route_config xdsresource.RouteConfigUpdate
+	Route_config RouteConfigUpdate
 	// Virtual host.  Points into route_config.  Will always be non-null.
-	virtual_host xdsresource.VirtualHost
+	Virtual_host *VirtualHost
 	// Cluster map.  A cluster will have a non-OK status if either
 	// (a) there was an error and we did not already have a valid
 	// resource or (b) the resource does not exist.
-	clusters map[string]ClusterConfigOrError
+	Clusters map[string]ClusterConfigOrError
 }
 
 type ClusterConfigOrError struct {
-	err error
+	Err error
 	// pointer to make it nil if error is present - check if necessary
-	cluster_config *ClusterConfig
+	Cluster_config ClusterConfig
 }
 
 type ClusterConfig struct {
 	// Cluster resource.
-	cluster  xdsresource.ClusterUpdate
-	children ClusterChild
+	Cluster  ClusterUpdate
+	Children ClusterChild
 }
 
 type EndpointConfig struct {
 	// Endpoint info for EDS and LOGICAL_DNS clusters.  If there was an
 	// error, endpoints will be null and resolution_note will be set.
-	endpoints       xdsresource.EndpointsUpdate
-	resolution_note string
+	Endpoints       EndpointsResource
+	Resolution_note string
+}
+
+// emchandwani this is new or update the EndpointsUpdate struct
+type EndpointsResource struct {
+	EDSUpdate    EndpointsUpdate
+	DNSEndpoints []resolver.Endpoint
 }
 
 type AggregateConfig struct {
 	// The list of leaf clusters for an aggregate cluster.
-	leaf_clusters []string
+	Leaf_clusters []string
 }
 
 type ClusterChild struct {
 	// pointers are used so that one of them can be set to nil
 	// will probably need a check which is present
 	// doubt - do we need a type field, it is already there in ClusterUpdate
-	endpoint_config  *EndpointConfig
-	aggregate_config *AggregateConfig
+	Child_type       string
+	Endpoint_config  EndpointConfig
+	Aggregate_config AggregateConfig
+}
+
+// handshakeClusterNameKey is the type used as the key to store cluster name in
+// the Attributes field of resolver.stateess.
+type xdsconfigkey struct{}
+
+// SetXDSHandshakeClusterName returns a copy of state in which the Attributes field
+// is updated with the cluster name.
+func SetXDSConfig(state resolver.State, config XdsConfig) resolver.State {
+	state.Attributes = state.Attributes.WithValue(xdsconfigkey{}, config)
+	return state
+}
+
+// GetXDSHandshakeClusterName returns cluster name stored in attr.
+func GetXDSConfig(attr *attributes.Attributes) (XdsConfig, bool) {
+	v := attr.Value(xdsconfigkey{})
+	config, ok := v.(XdsConfig)
+	return config, ok
 }

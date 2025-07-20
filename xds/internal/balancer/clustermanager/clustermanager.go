@@ -34,6 +34,7 @@ import (
 	"google.golang.org/grpc/internal/pretty"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
+	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource"
 )
 
 const balancerName = "xds_cluster_manager_experimental"
@@ -171,6 +172,10 @@ func (b *bal) UpdateClientConnState(s balancer.ClientConnState) error {
 	if b.logger.V(2) {
 		b.logger.Infof("Received update from resolver, balancer config: %+v", pretty.ToJSON(s.BalancerConfig))
 	}
+	attr := s.ResolverState.Attributes
+	config, _ := xdsresource.GetXDSConfig(attr)
+
+	b.logger.Infof("emchandwani the xdsCOnfig is %v", config)
 
 	newConfig, ok := s.BalancerConfig.(*lbConfig)
 	if !ok {
