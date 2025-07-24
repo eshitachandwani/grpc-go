@@ -481,15 +481,6 @@ func (r *xdsResolver) onResolutionComplete() {
 	r.curConfigSelector = cs
 }
 
-// onAmbientError propagates the error up to the channel. And since this is
-// invoked only for non resource errors, we don't have to update resolver
-// state and we can keep using the old config.
-//
-// Only executed in the context of a serializer callback.
-func (r *xdsResolver) onAmbientError(err error) {
-	r.cc.ReportError(err)
-}
-
 // Contains common functionality to be executed when resources of either type
 // are removed.
 //

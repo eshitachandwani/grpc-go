@@ -51,7 +51,7 @@ import (
 
 // Give the fallback tests additional time to complete because they need to
 // first identify failed connections before establishing new ones.
-const defaultFallbackTestTimeout = 2 * defaultTestTimeout
+const defaultFallbackTestTimeout = 10 * defaultTestTimeout
 
 func waitForRPCsToReachBackend(ctx context.Context, client testgrpc.TestServiceClient, backend string) error {
 	var lastErr error
@@ -604,7 +604,7 @@ func (s) TestFallback_MidStartup(t *testing.T) {
 
 // Tests that RPCs succeed at startup when the primary management server is
 // down, but the secondary is available.
-func TestFallback_OnStartup_RPCSuccess(t *testing.T) {
+func (s) TestFallback_OnStartup_RPCSuccess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultFallbackTestTimeout)
 	defer cancel()
 

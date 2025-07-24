@@ -86,7 +86,7 @@ func SetXDSConfig(state resolver.State, config XdsConfig) resolver.State {
 	return state
 }
 
-// GetXDSHandshakeClusterName returns cluster name stored in attr.
+// GetXDSConfig returns cluster name stored in attr.
 func GetXDSConfig(attr *attributes.Attributes) (XdsConfig, bool) {
 	v := attr.Value(xdsconfigkey{})
 	config, ok := v.(XdsConfig)

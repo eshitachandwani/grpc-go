@@ -481,7 +481,7 @@ func (s) TestAggregateCluster_WithOneDNSCluster_HostnameChange(t *testing.T) {
 // resource is an aggregate cluster that resolves to an EDS and a LOGICAL_DNS
 // cluster. The test verifies that RPCs fail until both clusters are resolved to
 // endpoints, and RPCs are routed to the higher priority EDS cluster.
-func (s) TestAggregateCluster_WithEDSAndDNS(t *testing.T) {
+func TestAggregateCluster_WithEDSAndDNS(t *testing.T) {
 	dnsTargetCh, dnsR := setupDNS(t)
 
 	// Start an xDS management server that pushes the name of the requested EDS

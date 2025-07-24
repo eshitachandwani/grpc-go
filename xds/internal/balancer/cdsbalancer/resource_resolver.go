@@ -16,7 +16,7 @@
  *
  */
 
-package clusterresolver
+package cdsbalancer
 
 import (
 	"context"
@@ -24,8 +24,6 @@ import (
 
 	"google.golang.org/grpc/internal/grpclog"
 	"google.golang.org/grpc/internal/grpcsync"
-	"google.golang.org/grpc/resolver"
-	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource"
 )
 
 // resourceUpdate is a combined update from all the resources, in the order of
@@ -56,24 +54,24 @@ type topLevelResolver interface {
 // endpointsResolver wraps the functionality to resolve a given resource name to
 // a set of endpoints. The mechanism used by concrete implementations depend on
 // the supported discovery mechanism type.
-type endpointsResolver interface {
-	// lastUpdate returns endpoint results from the most recent resolution.
-	//
-	// The type of the first return result is dependent on the resolver
-	// implementation.
-	//
-	// The second return result indicates whether the resolver was able to
-	// successfully resolve the resource name to endpoints. If set to false, the
-	// first return result is invalid and must not be used.
-	lastUpdate() (any, bool)
+// type endpointsResolver interface {
+// 	// lastUpdate returns endpoint results from the most recent resolution.
+// 	//
+// 	// The type of the first return result is dependent on the resolver
+// 	// implementation.
+// 	//
+// 	// The second return result indicates whether the resolver was able to
+// 	// successfully resolve the resource name to endpoints. If set to false, the
+// 	// first return result is invalid and must not be used.
+// 	lastUpdate() (any, bool)
 
-	// resolverNow triggers re-resolution of the resource.
-	resolveNow()
+// 	// resolverNow triggers re-resolution of the resource.
+// 	resolveNow()
 
-	// stop stops resolution of the resource. Implementations must not invoke
-	// any methods on the topLevelResolver interface once `stop()` returns.
-	stop()
-}
+// 	// stop stops resolution of the resource. Implementations must not invoke
+// 	// any methods on the topLevelResolver interface once `stop()` returns.
+// 	stop()
+// }
 
 // discoveryMechanismKey is {type+resource_name}, it's used as the map key, so
 // that the same resource resolver can be reused (e.g. when there are two
@@ -89,14 +87,12 @@ type discoveryMechanismKey struct {
 // the mechanism for fields like circuit breaking, LRS etc when generating the
 // balancer config.
 type discoveryMechanismAndResolver struct {
-	dm DiscoveryMechanism
-	r  endpointsResolver
-
+	dm           DiscoveryMechanism
 	childNameGen *nameGenerator
 }
 
 type resourceResolver struct {
-	parent           *clusterResolverBalancer
+	parent           *cdsBalancer
 	logger           *grpclog.PrefixLogger
 	updateChannel    chan *resourceUpdate
 	serializer       *grpcsync.CallbackSerializer
@@ -120,12 +116,11 @@ type resourceResolver struct {
 	childNameGeneratorSeqID uint64
 }
 
-func newResourceResolver(parent *clusterResolverBalancer, logger *grpclog.PrefixLogger) *resourceResolver {
+func newResourceResolver(parent *cdsBalancer, logger *grpclog.PrefixLogger) *resourceResolver {
 	rr := &resourceResolver{
-		parent:        parent,
-		logger:        logger,
-		updateChannel: make(chan *resourceUpdate, 1),
-		childrenMap:   make(map[discoveryMechanismKey]discoveryMechanismAndResolver),
+		parent:      parent,
+		logger:      logger,
+		childrenMap: make(map[discoveryMechanismKey]discoveryMechanismAndResolver),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	rr.serializer = grpcsync.NewCallbackSerializer(ctx)
@@ -165,6 +160,7 @@ func (rr *resourceResolver) updateMechanisms(mechanisms []DiscoveryMechanism) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 	if equalDiscoveryMechanisms(rr.mechanisms, mechanisms) {
+		// rr.generateLocked(func() {})
 		return
 	}
 	rr.mechanisms = mechanisms
@@ -189,17 +185,8 @@ func (rr *resourceResolver) updateMechanisms(mechanisms []DiscoveryMechanism) {
 			continue
 		}
 
-		// Create resolver for a newly seen resource.
-		var resolver endpointsResolver
-		switch dm.Type {
-		case DiscoveryMechanismTypeEDS:
-			resolver = newEDSResolver(dmKey.name, rr.parent.xdsClient, rr, rr.logger)
-		case DiscoveryMechanismTypeLogicalDNS:
-			resolver = newDNSResolver(dmKey.name, rr, rr.logger)
-		}
 		dmAndResolver = discoveryMechanismAndResolver{
 			dm:           dm,
-			r:            resolver,
 			childNameGen: newNameGenerator(rr.childNameGeneratorSeqID),
 		}
 		rr.childrenMap[dmKey] = dmAndResolver
@@ -208,25 +195,14 @@ func (rr *resourceResolver) updateMechanisms(mechanisms []DiscoveryMechanism) {
 	}
 
 	// Stop the resources that were removed.
-	for dm, r := range rr.childrenMap {
+	for dm, _ := range rr.childrenMap {
 		if !newDMs[dm] {
 			delete(rr.childrenMap, dm)
-			go r.r.stop()
 		}
 	}
 	// Regenerate even if there's no change in discovery mechanism, in case
 	// priority order changed.
-	rr.generateLocked(func() {})
-}
-
-// resolveNow is typically called to trigger re-resolve of DNS. The EDS
-// resolveNow() is a noop.
-func (rr *resourceResolver) resolveNow() {
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
-	for _, r := range rr.childrenMap {
-		r.r.resolveNow()
-	}
+	// rr.generateLocked(func() {})
 }
 
 func (rr *resourceResolver) stop(closing bool) {
@@ -238,16 +214,11 @@ func (rr *resourceResolver) stop(closing bool) {
 	// not happen as the parent LB policy will also be closed, causing this to
 	// be removed entirely, but a future use case might want to reuse the
 	// policy instead.
-	cm := rr.childrenMap
 	rr.childrenMap = make(map[discoveryMechanismKey]discoveryMechanismAndResolver)
 	rr.mechanisms = nil
 	rr.children = nil
 
 	rr.mu.Unlock()
-
-	for _, r := range cm {
-		r.r.stop()
-	}
 
 	if closing {
 		rr.serializerCancel()
@@ -282,41 +253,41 @@ func (rr *resourceResolver) stop(closing bool) {
 // clusterresolver LB policy.
 //
 // Caller must hold rr.mu.
-func (rr *resourceResolver) generateLocked(onDone func()) {
-	var ret []priorityConfig
-	for _, rDM := range rr.children {
-		u, ok := rDM.r.lastUpdate()
-		if !ok {
-			// Don't send updates to parent until all resolvers have update to
-			// send.
-			onDone()
-			return
-		}
-		switch uu := u.(type) {
-		case xdsresource.EndpointsUpdate:
-			ret = append(ret, priorityConfig{mechanism: rDM.dm, edsResp: uu, childNameGen: rDM.childNameGen})
-		case []resolver.Endpoint:
-			ret = append(ret, priorityConfig{mechanism: rDM.dm, endpoints: uu, childNameGen: rDM.childNameGen})
-		}
-	}
-	select {
-	// A previously unprocessed update is dropped in favor of the new one, and
-	// the former's onDone callback is invoked to unblock the xDS client's
-	// receive path.
-	case ru := <-rr.updateChannel:
-		if ru.onDone != nil {
-			ru.onDone()
-		}
-	default:
-	}
-	rr.updateChannel <- &resourceUpdate{priorities: ret, onDone: onDone}
-}
+// func (rr *resourceResolver) generateLocked(onDone func()) {
+// 	var ret []priorityConfig
+// 	for _, rDM := range rr.children {
+// 		u, ok := rDM.r.lastUpdate()
+// 		if !ok {
+// 			// Don't send updates to parent until all resolvers have update to
+// 			// send.
+// 			onDone()
+// 			return
+// 		}
+// 		switch uu := u.(type) {
+// 		case xdsresource.EndpointsUpdate:
+// 			ret = append(ret, priorityConfig{mechanism: rDM.dm, edsResp: uu, childNameGen: rDM.childNameGen})
+// 		case []resolver.Endpoint:
+// 			ret = append(ret, priorityConfig{mechanism: rDM.dm, endpoints: uu, childNameGen: rDM.childNameGen})
+// 		}
+// 	}
+// 	select {
+// 	// A previously unprocessed update is dropped in favor of the new one, and
+// 	// the former's onDone callback is invoked to unblock the xDS client's
+// 	// receive path.
+// 	case ru := <-rr.updateChannel:
+// 		if ru.onDone != nil {
+// 			ru.onDone()
+// 		}
+// 	default:
+// 	}
+// 	rr.updateChannel <- &resourceUpdate{priorities: ret, onDone: onDone}
+// }
 
-func (rr *resourceResolver) onUpdate(onDone func()) {
-	handleUpdate := func(context.Context) {
-		rr.mu.Lock()
-		rr.generateLocked(onDone)
-		rr.mu.Unlock()
-	}
-	rr.serializer.ScheduleOr(handleUpdate, func() { onDone() })
-}
+// func (rr *resourceResolver) onUpdate(onDone func()) {
+// 	handleUpdate := func(context.Context) {
+// 		rr.mu.Lock()
+// 		rr.generateLocked(onDone)
+// 		rr.mu.Unlock()
+// 	}
+// 	rr.serializer.ScheduleOr(handleUpdate, func() { onDone() })
+// }

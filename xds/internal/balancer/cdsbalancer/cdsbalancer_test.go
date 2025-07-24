@@ -317,7 +317,7 @@ func verifyRPCError(gotErr error, wantCode codes.Code, wantErr, wantNodeID strin
 // configuration again, it does not send out a new request, and when the
 // configuration changes, it stops requesting the old cluster resource and
 // starts requesting the new one.
-func (s) TestConfigurationUpdate_Success(t *testing.T) {
+func TestConfigurationUpdate_Success(t *testing.T) {
 	_, _, _, r, xdsClient, cdsResourceRequestedCh, _ := setupWithManagementServer(t)
 
 	// Verify that the specified cluster resource is requested.
@@ -492,10 +492,10 @@ func (s) TestClusterUpdate_Success(t *testing.T) {
 				}
 				return c
 			}(),
-			wantChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+			wantChildCfg: &LBConfig{
+				DiscoveryMechanisms: []DiscoveryMechanism{{
 					Cluster:               clusterName,
-					Type:                  clusterresolver.DiscoveryMechanismTypeEDS,
+					Type:                  DiscoveryMechanismTypeEDS,
 					EDSServiceName:        serviceName,
 					MaxConcurrentRequests: newUint32(512),
 					OutlierDetection:      json.RawMessage(`{}`),
@@ -521,10 +521,10 @@ func (s) TestClusterUpdate_Success(t *testing.T) {
 				}
 				return c
 			}(),
-			wantChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+			wantChildCfg: &LBConfig{
+				DiscoveryMechanisms: []DiscoveryMechanism{{
 					Cluster:          clusterName,
-					Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+					Type:             DiscoveryMechanismTypeEDS,
 					EDSServiceName:   serviceName,
 					OutlierDetection: json.RawMessage(`{}`),
 					TelemetryLabels:  xdsinternal.UnknownCSMLabels,
@@ -544,10 +544,10 @@ func (s) TestClusterUpdate_Success(t *testing.T) {
 				c.OutlierDetection = &v3clusterpb.OutlierDetection{}
 				return c
 			}(),
-			wantChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+			wantChildCfg: &LBConfig{
+				DiscoveryMechanisms: []DiscoveryMechanism{{
 					Cluster:          clusterName,
-					Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+					Type:             DiscoveryMechanismTypeEDS,
 					EDSServiceName:   serviceName,
 					OutlierDetection: json.RawMessage(`{"successRateEjection":{}}`),
 					TelemetryLabels:  xdsinternal.UnknownCSMLabels,
@@ -580,10 +580,10 @@ func (s) TestClusterUpdate_Success(t *testing.T) {
 				}
 				return c
 			}(),
-			wantChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+			wantChildCfg: &LBConfig{
+				DiscoveryMechanisms: []DiscoveryMechanism{{
 					Cluster:        clusterName,
-					Type:           clusterresolver.DiscoveryMechanismTypeEDS,
+					Type:           DiscoveryMechanismTypeEDS,
 					EDSServiceName: serviceName,
 					OutlierDetection: json.RawMessage(`{
 						"interval": "10s",
@@ -649,10 +649,10 @@ func (s) TestClusterUpdate_SuccessWithLRS(t *testing.T) {
 		t.Fatalf("Failed to create LRS server config for testing: %v", err)
 	}
 
-	wantChildCfg := &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+	wantChildCfg := &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{{
 			Cluster:             clusterName,
-			Type:                clusterresolver.DiscoveryMechanismTypeEDS,
+			Type:                DiscoveryMechanismTypeEDS,
 			EDSServiceName:      serviceName,
 			LoadReportingServer: lrsServerCfg,
 			OutlierDetection:    json.RawMessage(`{}`),

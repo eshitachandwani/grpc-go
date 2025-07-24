@@ -99,6 +99,7 @@ func (xdm *xdsDependencyManager) build() {
 	xdm.dnsWatcher = make(map[string]*dnsWatcher)
 	xdm.edsWatchers = make(map[string]*edsWatcherState)
 	xdm.listenerWatcher = newListenerWatcher(xdm.listenerName, xdm) //pass xds dependency manager as parent)
+	xdm.Clusters = make(map[string]xdsresource.ClusterConfigOrError)
 
 	//route watcher
 	//cds watcher
@@ -141,6 +142,7 @@ func (xdm *xdsDependencyManager) sendUpdate() {
 	configUpdate.Listener = xdm.currentListener
 	configUpdate.Route_config = xdm.currentRouteConfig
 	configUpdate.Virtual_host = xdm.currentVirtualHost
+	configUpdate.Clusters = make(map[string]xdsresource.ClusterConfigOrError)
 	clustersTowatch := make(map[string]struct{})
 	for cluster := range xdm.clustersFromRoute {
 		clustersTowatch[cluster] = struct{}{}
@@ -150,18 +152,19 @@ func (xdm *xdsDependencyManager) sendUpdate() {
 	dnsResourcesSeen := make(map[string]struct{})
 	haveAllResources := true
 	// var err error
-	clustermap := make(map[string]xdsresource.ClusterConfigOrError)
+	// clustermap := make(map[string]xdsresource.ClusterConfigOrError)
 	leaf_cluster := &[]string{}
 	for cluster := range clustersTowatch {
-		haveAllClusterResources, err := xdm.populateCLutserConfig(cluster, 0, clustermap, edsResourcesSeen, dnsResourcesSeen, leaf_cluster)
+		haveAllClusterResources, err := xdm.populateCLutserConfig(cluster, 0, xdm.Clusters, edsResourcesSeen, dnsResourcesSeen, leaf_cluster)
 		if err != nil {
-			clustermap[cluster] = xdsresource.ClusterConfigOrError{Err: err}
+			configUpdate.Clusters[cluster] = xdsresource.ClusterConfigOrError{Err: err}
 		}
 		if !haveAllClusterResources {
 			haveAllResources = false
 		}
 	}
 	if haveAllResources {
+		configUpdate.Clusters = xdm.Clusters
 		xdm.watcher.OnUpdate(XdsConfigOrError{XdsConfig: configUpdate, error: nil})
 	}
 	//cancel watchers for clusters not in cluster map
@@ -201,7 +204,7 @@ func (xdm *xdsDependencyManager) populateCLutserConfig(clusterName string, depth
 	if ok {
 		return true, nil
 	}
-	clusterConfigMap[clusterName] = xdsresource.ClusterConfigOrError{Err: fmt.Errorf("No CLuster data yet")}
+	// clusterConfigMap[clusterName] = xdsresource.ClusterConfigOrError{Err: fmt.Errorf("no CLuster data yet")}
 
 	state, ok := xdm.clusterWatchers[clusterName]
 	if !ok {
@@ -261,6 +264,7 @@ func (xdm *xdsDependencyManager) populateCLutserConfig(clusterName string, depth
 					Aggregate_config: xdsresource.AggregateConfig{Leaf_clusters: *child_leaf_clusters},
 				},
 			},
+			Err: nil,
 		}
 		// append the leaf clusters for the upper clusters in tree.
 		*leafClusters = append(*leafClusters, *child_leaf_clusters...)
@@ -293,7 +297,15 @@ func (xdm *xdsDependencyManager) populateCLutserConfig(clusterName string, depth
 		// 	}
 		// 	return true, nil
 		// }
-		clusterConfigMap[name] = xdsresource.ClusterConfigOrError{Cluster_config: xdsresource.ClusterConfig{Cluster: *cluster, Children: xdsresource.ClusterChild{Child_type: "endpoint", Endpoint_config: xdsresource.EndpointConfig{Endpoints: xdsresource.EndpointsResource{EDSUpdate: *edsstate.update}}}}}
+		clusterConfigMap[clusterName] = xdsresource.ClusterConfigOrError{
+			Cluster_config: xdsresource.ClusterConfig{
+				Cluster: *cluster,
+				Children: xdsresource.ClusterChild{
+					Child_type: "endpoint",
+					Endpoint_config: xdsresource.EndpointConfig{
+						Endpoints: xdsresource.EndpointsResource{
+							EDSUpdate: *edsstate.update}}}},
+			Err: nil}
 
 	case xdsresource.ClusterTypeLogicalDNS:
 		host := cluster.DNSHostName
@@ -309,7 +321,15 @@ func (xdm *xdsDependencyManager) populateCLutserConfig(clusterName string, depth
 		if depth > 0 {
 			*leafClusters = append(*leafClusters, host)
 		}
-		clusterConfigMap[host] = xdsresource.ClusterConfigOrError{Cluster_config: xdsresource.ClusterConfig{Cluster: *cluster, Children: xdsresource.ClusterChild{Child_type: "endpoint", Endpoint_config: xdsresource.EndpointConfig{Endpoints: xdsresource.EndpointsResource{DNSEndpoints: dnsstate.endpoints}}}}}
+		clusterConfigMap[host] = xdsresource.ClusterConfigOrError{
+			Cluster_config: xdsresource.ClusterConfig{
+				Cluster: *cluster,
+				Children: xdsresource.ClusterChild{
+					Child_type: "logicaldns",
+					Endpoint_config: xdsresource.EndpointConfig{
+						Endpoints: xdsresource.EndpointsResource{
+							DNSEndpoints: dnsstate.endpoints}}}},
+			Err: nil}
 	}
 	return true, nil
 

@@ -33,8 +33,8 @@ type clusterWatcher struct {
 }
 
 func (cw *clusterWatcher) ResourceChanged(u *xdsresource.ClusterResourceData, onDone func()) {
-	handleUpdate := func(context.Context) { cw.parent.onClusterUpdate(cw.name, u.Resource); onDone() }
-	cw.parent.serializer.ScheduleOr(handleUpdate, onDone)
+	// handleUpdate := func(context.Context) { cw.parent.onClusterUpdate(cw.name, u.Resource); onDone() }
+	// cw.parent.serializer.ScheduleOr(handleUpdate, onDone)
 }
 
 func (cw *clusterWatcher) ResourceError(err error, onDone func()) {

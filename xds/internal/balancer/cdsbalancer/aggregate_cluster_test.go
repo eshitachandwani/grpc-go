@@ -34,7 +34,6 @@ import (
 	"google.golang.org/grpc/serviceconfig"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/xds/internal"
-	"google.golang.org/grpc/xds/internal/balancer/clusterresolver"
 
 	v3clusterpb "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	v3endpointpb "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
@@ -80,20 +79,20 @@ func (s) TestAggregateClusterSuccess_LeafNode(t *testing.T) {
 			name:                  "eds",
 			firstClusterResource:  e2e.DefaultCluster(clusterName, serviceName, e2e.SecurityLevelNone),
 			secondClusterResource: e2e.DefaultCluster(clusterName, serviceName+"-new", e2e.SecurityLevelNone),
-			wantFirstChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+			wantFirstChildCfg: &LBConfig{
+				DiscoveryMechanisms: []DiscoveryMechanism{{
 					Cluster:          clusterName,
-					Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+					Type:             DiscoveryMechanismTypeEDS,
 					EDSServiceName:   serviceName,
 					OutlierDetection: json.RawMessage(`{}`),
 					TelemetryLabels:  internal.UnknownCSMLabels,
 				}},
 				XDSLBPolicy: json.RawMessage(`[{"xds_wrr_locality_experimental": {"childPolicy": [{"round_robin": {}}]}}]`),
 			},
-			wantSecondChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+			wantSecondChildCfg: &LBConfig{
+				DiscoveryMechanisms: []DiscoveryMechanism{{
 					Cluster:          clusterName,
-					Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+					Type:             DiscoveryMechanismTypeEDS,
 					EDSServiceName:   serviceName + "-new",
 					OutlierDetection: json.RawMessage(`{}`),
 					TelemetryLabels:  internal.UnknownCSMLabels,
@@ -105,20 +104,20 @@ func (s) TestAggregateClusterSuccess_LeafNode(t *testing.T) {
 			name:                  "dns",
 			firstClusterResource:  makeLogicalDNSClusterResource(clusterName, "dns_host", uint32(8080)),
 			secondClusterResource: makeLogicalDNSClusterResource(clusterName, "dns_host_new", uint32(8080)),
-			wantFirstChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+			wantFirstChildCfg: &LBConfig{
+				DiscoveryMechanisms: []DiscoveryMechanism{{
 					Cluster:          clusterName,
-					Type:             clusterresolver.DiscoveryMechanismTypeLogicalDNS,
+					Type:             DiscoveryMechanismTypeLogicalDNS,
 					DNSHostname:      "dns_host:8080",
 					OutlierDetection: json.RawMessage(`{}`),
 					TelemetryLabels:  internal.UnknownCSMLabels,
 				}},
 				XDSLBPolicy: json.RawMessage(`[{"xds_wrr_locality_experimental": {"childPolicy": [{"round_robin": {}}]}}]`),
 			},
-			wantSecondChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+			wantSecondChildCfg: &LBConfig{
+				DiscoveryMechanisms: []DiscoveryMechanism{{
 					Cluster:          clusterName,
-					Type:             clusterresolver.DiscoveryMechanismTypeLogicalDNS,
+					Type:             DiscoveryMechanismTypeLogicalDNS,
 					DNSHostname:      "dns_host_new:8080",
 					OutlierDetection: json.RawMessage(`{}`),
 					TelemetryLabels:  internal.UnknownCSMLabels,
@@ -209,18 +208,18 @@ func (s) TestAggregateClusterSuccess_ThenUpdateChildClusters(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantChildCfg := &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{
+	wantChildCfg := &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{
 			{
 				Cluster:          edsClusterName,
-				Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+				Type:             DiscoveryMechanismTypeEDS,
 				EDSServiceName:   serviceName,
 				OutlierDetection: json.RawMessage(`{}`),
 				TelemetryLabels:  internal.UnknownCSMLabels,
 			},
 			{
 				Cluster:          dnsClusterName,
-				Type:             clusterresolver.DiscoveryMechanismTypeLogicalDNS,
+				Type:             DiscoveryMechanismTypeLogicalDNS,
 				DNSHostname:      fmt.Sprintf("%s:%d", dnsHostName, dnsPort),
 				OutlierDetection: json.RawMessage(`{}`),
 				TelemetryLabels:  internal.UnknownCSMLabels,
@@ -247,18 +246,18 @@ func (s) TestAggregateClusterSuccess_ThenUpdateChildClusters(t *testing.T) {
 	if err := mgmtServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
 	}
-	wantChildCfg = &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{
+	wantChildCfg = &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{
 			{
 				Cluster:          edsClusterName,
-				Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+				Type:             DiscoveryMechanismTypeEDS,
 				EDSServiceName:   serviceName,
 				OutlierDetection: json.RawMessage(`{}`),
 				TelemetryLabels:  internal.UnknownCSMLabels,
 			},
 			{
 				Cluster:          dnsClusterNameNew,
-				Type:             clusterresolver.DiscoveryMechanismTypeLogicalDNS,
+				Type:             DiscoveryMechanismTypeLogicalDNS,
 				DNSHostname:      fmt.Sprintf("%s:%d", dnsHostNameNew, dnsPort),
 				OutlierDetection: json.RawMessage(`{}`),
 				TelemetryLabels:  internal.UnknownCSMLabels,
@@ -300,18 +299,18 @@ func (s) TestAggregateClusterSuccess_ThenChangeRootToEDS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantChildCfg := &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{
+	wantChildCfg := &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{
 			{
 				Cluster:          edsClusterName,
-				Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+				Type:             DiscoveryMechanismTypeEDS,
 				EDSServiceName:   serviceName,
 				OutlierDetection: json.RawMessage(`{}`),
 				TelemetryLabels:  internal.UnknownCSMLabels,
 			},
 			{
 				Cluster:          dnsClusterName,
-				Type:             clusterresolver.DiscoveryMechanismTypeLogicalDNS,
+				Type:             DiscoveryMechanismTypeLogicalDNS,
 				DNSHostname:      fmt.Sprintf("%s:%d", dnsHostName, dnsPort),
 				OutlierDetection: json.RawMessage(`{}`),
 				TelemetryLabels:  internal.UnknownCSMLabels,
@@ -334,10 +333,10 @@ func (s) TestAggregateClusterSuccess_ThenChangeRootToEDS(t *testing.T) {
 	if err := mgmtServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
 	}
-	wantChildCfg = &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+	wantChildCfg = &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{{
 			Cluster:          clusterName,
-			Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+			Type:             DiscoveryMechanismTypeEDS,
 			EDSServiceName:   serviceName,
 			OutlierDetection: json.RawMessage(`{}`),
 			TelemetryLabels:  internal.UnknownCSMLabels,
@@ -369,10 +368,10 @@ func (s) TestAggregatedClusterSuccess_SwitchBetweenLeafAndAggregate(t *testing.T
 	if err := mgmtServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
 	}
-	wantChildCfg := &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+	wantChildCfg := &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{{
 			Cluster:          clusterName,
-			Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+			Type:             DiscoveryMechanismTypeEDS,
 			EDSServiceName:   serviceName,
 			OutlierDetection: json.RawMessage(`{}`),
 			TelemetryLabels:  internal.UnknownCSMLabels,
@@ -397,18 +396,18 @@ func (s) TestAggregatedClusterSuccess_SwitchBetweenLeafAndAggregate(t *testing.T
 	if err := mgmtServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
 	}
-	wantChildCfg = &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{
+	wantChildCfg = &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{
 			{
 				Cluster:          edsClusterName,
-				Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+				Type:             DiscoveryMechanismTypeEDS,
 				EDSServiceName:   serviceName,
 				OutlierDetection: json.RawMessage(`{}`),
 				TelemetryLabels:  internal.UnknownCSMLabels,
 			},
 			{
 				Cluster:          dnsClusterName,
-				Type:             clusterresolver.DiscoveryMechanismTypeLogicalDNS,
+				Type:             DiscoveryMechanismTypeLogicalDNS,
 				DNSHostname:      fmt.Sprintf("%s:%d", dnsHostName, dnsPort),
 				OutlierDetection: json.RawMessage(`{}`),
 				TelemetryLabels:  internal.UnknownCSMLabels,
@@ -429,10 +428,10 @@ func (s) TestAggregatedClusterSuccess_SwitchBetweenLeafAndAggregate(t *testing.T
 	if err := mgmtServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
 	}
-	wantChildCfg = &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+	wantChildCfg = &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{{
 			Cluster:          clusterName,
-			Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+			Type:             DiscoveryMechanismTypeEDS,
 			EDSServiceName:   serviceName,
 			OutlierDetection: json.RawMessage(`{}`),
 			TelemetryLabels:  internal.UnknownCSMLabels,
@@ -582,10 +581,10 @@ func (s) TestAggregatedClusterSuccess_DiamondDependency(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantChildCfg := &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+	wantChildCfg := &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{{
 			Cluster:          clusterNameD,
-			Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+			Type:             DiscoveryMechanismTypeEDS,
 			EDSServiceName:   serviceName,
 			OutlierDetection: json.RawMessage(`{}`),
 			TelemetryLabels:  internal.UnknownCSMLabels,
@@ -649,18 +648,18 @@ func (s) TestAggregatedClusterSuccess_IgnoreDups(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantChildCfg := &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{
+	wantChildCfg := &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{
 			{
 				Cluster:          clusterNameC,
-				Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+				Type:             DiscoveryMechanismTypeEDS,
 				EDSServiceName:   serviceName,
 				OutlierDetection: json.RawMessage(`{}`),
 				TelemetryLabels:  internal.UnknownCSMLabels,
 			},
 			{
 				Cluster:          clusterNameD,
-				Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+				Type:             DiscoveryMechanismTypeEDS,
 				EDSServiceName:   serviceName,
 				OutlierDetection: json.RawMessage(`{}`),
 				TelemetryLabels:  internal.UnknownCSMLabels,
@@ -740,10 +739,10 @@ func (s) TestAggregatedCluster_NodeChildOfItself(t *testing.T) {
 	}
 
 	// Verify the configuration pushed to the child policy.
-	wantChildCfg := &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+	wantChildCfg := &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{{
 			Cluster:          clusterNameB,
-			Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+			Type:             DiscoveryMechanismTypeEDS,
 			EDSServiceName:   serviceName,
 			OutlierDetection: json.RawMessage(`{}`),
 			TelemetryLabels:  internal.UnknownCSMLabels,
@@ -846,10 +845,10 @@ func (s) TestAggregatedCluster_CycleWithLeafNode(t *testing.T) {
 	}
 
 	// Verify the configuration pushed to the child policy.
-	wantChildCfg := &clusterresolver.LBConfig{
-		DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
+	wantChildCfg := &LBConfig{
+		DiscoveryMechanisms: []DiscoveryMechanism{{
 			Cluster:          clusterNameC,
-			Type:             clusterresolver.DiscoveryMechanismTypeEDS,
+			Type:             DiscoveryMechanismTypeEDS,
 			EDSServiceName:   serviceName,
 			OutlierDetection: json.RawMessage(`{}`),
 			TelemetryLabels:  internal.UnknownCSMLabels,
