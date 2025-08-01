@@ -39,6 +39,7 @@ import (
 	"google.golang.org/grpc/internal/pretty"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
+	"google.golang.org/grpc/xds/internal/balancer/outlierdetection"
 	"google.golang.org/grpc/xds/internal/balancer/priority"
 	"google.golang.org/grpc/xds/internal/xdsclient"
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource"
@@ -351,12 +352,14 @@ func (b *cdsBalancer) UpdateClientConnState(state balancer.ClientConnState) erro
 		if !ok {
 			b.onClusterError(lbCfg.ClusterName, b.annotateErrorWithNodeID(fmt.Errorf("xds: no xds config found in resolver state attributes")))
 			// errCh <- fmt.Errorf("xds: no xds config found in resolver state attributes")
+			errCh <- nil
 			return
 		}
 		b.clustersConfigMap = xdsConfig.Clusters
 		b.rootClusterConfig = xdsConfig.Clusters[lbCfg.ClusterName]
 		if b.rootClusterConfig.Err != nil {
 			b.onClusterError(lbCfg.ClusterName, b.annotateErrorWithNodeID(b.rootClusterConfig.Err))
+			errCh <- nil
 			return
 		}
 		if err := b.handleSecurityConfig(b.rootClusterConfig.Cluster_config.Cluster.SecurityCfg); err != nil {
@@ -364,17 +367,12 @@ func (b *cdsBalancer) UpdateClientConnState(state balancer.ClientConnState) erro
 			// instance is not found in the bootstrap config, we need to put the
 			// channel in transient failure.
 			b.onClusterError(lbCfg.ClusterName, b.annotateErrorWithNodeID(fmt.Errorf("received Cluster resource contains invalid security config: %v", err)))
+			errCh <- nil
 			return
 		}
-		cfg, _ := state.BalancerConfig.(*LBConfig)
-		if cfg == nil {
-			b.logger.Warningf("Ignoring unsupported balancer configuration of type: %T", state.BalancerConfig)
-			return
-		}
-
-		b.config = cfg
 		b.configRaw = state.ResolverState.ServiceConfig
 		b.clusterUpdate(lbCfg.ClusterName, b.rootClusterConfig.Cluster_config.Cluster)
+
 		errCh <- nil
 	}
 	onFailure := func() {
@@ -645,6 +643,24 @@ func (b *cdsBalancer) clusterUpdate(name string, update xdsresource.ClusterUpdat
 	}
 
 	// for name,state:=b.rootClusterConfig.Cluster_config.Children.Child_type {}
+	childCfg := LBConfig{
+		DiscoveryMechanisms: dms,
+		// The LB policy is configured by the root cluster.
+		XDSLBPolicy: b.rootClusterConfig.Cluster_config.Cluster.LBPolicy,
+	}
+	cfgJSON, err := json.Marshal(childCfg)
+	if err != nil {
+		// Shouldn't happen, since we just prepared struct.
+		b.logger.Errorf("cds_balancer: error marshalling prepared config: %v", childCfg)
+		return
+	}
+
+	var sc serviceconfig.LoadBalancingConfig
+	if sc, err = b.ParseClusterResolverConfig(cfgJSON); err != nil {
+		b.logger.Errorf("cds_balancer: cluster_resolver config generated %v is invalid: %v", string(cfgJSON), err)
+		return
+	}
+	b.config = sc.(*LBConfig)
 
 	// Child policy is built the first time we resolve the cluster graph.
 	if b.childLB == nil {
@@ -687,6 +703,48 @@ func (b *cdsBalancer) clusterUpdate(name string, update xdsresource.ClusterUpdat
 	// if err := b.childLB.UpdateClientConnState(ccState); err != nil {
 	// 	b.logger.Errorf("Encountered error when sending config {%+v} to child policy: %v", ccState, err)
 	// }
+}
+
+func (*cdsBalancer) ParseClusterResolverConfig(j json.RawMessage) (serviceconfig.LoadBalancingConfig, error) {
+	odBuilder := balancer.Get(outlierdetection.Name)
+	if odBuilder == nil {
+		// Shouldn't happen, registered through imported Outlier Detection,
+		// defensive programming.
+		return nil, fmt.Errorf("%q LB policy is needed but not registered", outlierdetection.Name)
+	}
+	odParser, ok := odBuilder.(balancer.ConfigParser)
+	if !ok {
+		// Shouldn't happen, imported Outlier Detection builder has this method.
+		return nil, fmt.Errorf("%q LB policy does not implement a config parser", outlierdetection.Name)
+	}
+
+	var cfg *LBConfig
+	if err := json.Unmarshal(j, &cfg); err != nil {
+		return nil, fmt.Errorf("unable to unmarshal balancer config %s into cluster-resolver config, error: %v", string(j), err)
+	}
+
+	for i, dm := range cfg.DiscoveryMechanisms {
+		lbCfg, err := odParser.ParseConfig(dm.OutlierDetection)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing Outlier Detection config %v: %v", dm.OutlierDetection, err)
+		}
+		odCfg, ok := lbCfg.(*outlierdetection.LBConfig)
+		if !ok {
+			// Shouldn't happen, Parser built at build time with Outlier Detection
+			// builder pulled from gRPC LB Registry.
+			return nil, fmt.Errorf("odParser returned config with unexpected type %T: %v", lbCfg, lbCfg)
+		}
+		cfg.DiscoveryMechanisms[i].outlierDetection = *odCfg
+	}
+	if err := json.Unmarshal(cfg.XDSLBPolicy, &cfg.xdsLBPolicy); err != nil {
+		// This will never occur, valid configuration is emitted from the xDS
+		// Client. Validity is already checked in the xDS Client, however, this
+		// double validation is present because Unmarshalling and Validating are
+		// coupled into one json.Unmarshal operation. We will switch this in
+		// the future to two separate operations.
+		return nil, fmt.Errorf("error unmarshalling xDS LB Policy: %v", err)
+	}
+	return cfg, nil
 }
 
 // updateChildConfig builds child policy configuration using endpoint addresses
