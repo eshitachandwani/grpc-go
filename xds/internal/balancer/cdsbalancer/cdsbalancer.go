@@ -43,6 +43,7 @@ import (
 	"google.golang.org/grpc/xds/internal/balancer/priority"
 	"google.golang.org/grpc/xds/internal/xdsclient"
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource"
+	"google.golang.org/grpc/xds/internal/xdsdepsManager"
 )
 
 const (
@@ -145,6 +146,7 @@ func (bb) Name() string {
 type lbConfig struct {
 	serviceconfig.LoadBalancingConfig
 	ClusterName string `json:"Cluster"`
+	IsDynamic   bool   `json:"is_dynamic"`
 }
 
 // ParseConfig parses the JSON load balancer config provided into an
@@ -189,6 +191,7 @@ type cdsBalancer struct {
 	// a new provider is to be created.
 	cachedRoot        certprovider.Provider
 	cachedIdentity    certprovider.Provider
+	clusterSubs       *xdsdepsManager.ClusterRefs
 	clustersConfigMap map[string]xdsresource.ClusterConfigOrError // Cluster updates received from the xDS client, keyed by cluster name.
 	rootClusterConfig xdsresource.ClusterConfigOrError            // The root cluster config, which is the one that is configured by the user in the service config.
 
@@ -338,7 +341,7 @@ func (b *cdsBalancer) UpdateClientConnState(state balancer.ClientConnState) erro
 	}
 
 	// Do nothing and return early if configuration has not changed.
-	if b.lbCfg != nil && b.lbCfg.ClusterName == lbCfg.ClusterName {
+	if b.lbCfg != nil && b.lbCfg.ClusterName == lbCfg.ClusterName && !lbCfg.IsDynamic {
 		return nil
 	}
 	b.lbCfg = lbCfg
@@ -346,6 +349,13 @@ func (b *cdsBalancer) UpdateClientConnState(state balancer.ClientConnState) erro
 	// Handle the update in a blocking fashion.
 	errCh := make(chan error, 1)
 	callback := func(context.Context) {
+		if b.lbCfg.IsDynamic && b.clusterSubs == nil {
+			xdsdepmngr, ok := xdsdepsManager.GetXdsDependencyManager(state.ResolverState.Attributes)
+			if !ok {
+				panic("No dependency manager passed")
+			}
+			b.clusterSubs = xdsdepmngr.Clustersubscription(lbCfg.ClusterName)
+		}
 
 		// emchandwani : get the config from xdsCOnfig from resolver state
 		xdsConfig, ok := xdsresource.GetXDSConfig(state.ResolverState.Attributes)
@@ -354,6 +364,14 @@ func (b *cdsBalancer) UpdateClientConnState(state balancer.ClientConnState) erro
 			// errCh <- fmt.Errorf("xds: no xds config found in resolver state attributes")
 			errCh <- nil
 			return
+		}
+		if _, ok := xdsConfig.Clusters[b.lbCfg.ClusterName]; !ok {
+			// if dynamic , could be that we just subscribed and have not yet received it in update.
+			if b.lbCfg.IsDynamic {
+				errCh <- nil
+				return
+			}
+			b.onClusterError(lbCfg.ClusterName, b.annotateErrorWithNodeID(fmt.Errorf("did not find the statis cluster in xdsConfig")))
 		}
 		b.clustersConfigMap = xdsConfig.Clusters
 		b.rootClusterConfig = xdsConfig.Clusters[lbCfg.ClusterName]
@@ -450,6 +468,9 @@ func (b *cdsBalancer) Close() {
 		}
 		if b.cachedIdentity != nil {
 			b.cachedIdentity.Close()
+		}
+		if b.clusterSubs != nil {
+			b.clusterSubs.Unsubscribe()
 		}
 		b.logger.Infof("Shutdown")
 	})

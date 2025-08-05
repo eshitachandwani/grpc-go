@@ -16,7 +16,7 @@
  *
  */
 
-package resolver
+package xdsdepsManager
 
 import (
 	"context"
@@ -27,28 +27,28 @@ import (
 type listenerWatcher struct {
 	resourceName string
 	cancel       func()
-	parent       *xdsDependencyManager
+	parent       *XdsDependencyManager
 }
 
-func newListenerWatcher(resourceName string, parent *xdsDependencyManager) *listenerWatcher {
+func newListenerWatcher(resourceName string, parent *XdsDependencyManager) *listenerWatcher {
 	lw := &listenerWatcher{resourceName: resourceName, parent: parent}
-	lw.cancel = xdsresource.WatchListener(parent.xdsClient, resourceName, lw)
+	lw.cancel = xdsresource.WatchListener(parent.XdsClient, resourceName, lw)
 	return lw
 }
 
 func (l *listenerWatcher) ResourceChanged(update *xdsresource.ListenerResourceData, onDone func()) {
 	handleUpdate := func(context.Context) { l.parent.onListenerResourceUpdate(update.Resource); onDone() }
-	l.parent.serializer.ScheduleOr(handleUpdate, onDone)
+	l.parent.Serializer.ScheduleOr(handleUpdate, onDone)
 }
 
 func (l *listenerWatcher) ResourceError(err error, onDone func()) {
 	handleError := func(context.Context) { l.parent.onListenerResourceError(err); onDone() }
-	l.parent.serializer.ScheduleOr(handleError, onDone)
+	l.parent.Serializer.ScheduleOr(handleError, onDone)
 }
 
 func (l *listenerWatcher) AmbientError(err error, onDone func()) {
 	handleError := func(context.Context) { l.parent.onListenerResourceAmbientError(err); onDone() }
-	l.parent.serializer.ScheduleOr(handleError, onDone)
+	l.parent.Serializer.ScheduleOr(handleError, onDone)
 }
 
 func (l *listenerWatcher) stop() {
@@ -60,12 +60,12 @@ func (l *listenerWatcher) stop() {
 type routeConfigWatcher struct {
 	resourceName string
 	cancel       func()
-	parent       *xdsDependencyManager
+	parent       *XdsDependencyManager
 }
 
-func newRouteConfigWatcher(resourceName string, parent *xdsDependencyManager) *routeConfigWatcher {
+func newRouteConfigWatcher(resourceName string, parent *XdsDependencyManager) *routeConfigWatcher {
 	rw := &routeConfigWatcher{resourceName: resourceName, parent: parent}
-	rw.cancel = xdsresource.WatchRouteConfig(parent.xdsClient, resourceName, rw)
+	rw.cancel = xdsresource.WatchRouteConfig(parent.XdsClient, resourceName, rw)
 	return rw
 }
 
@@ -74,17 +74,17 @@ func (r *routeConfigWatcher) ResourceChanged(u *xdsresource.RouteConfigResourceD
 		r.parent.onRouteConfigResourceUpdate(r.resourceName, u.Resource)
 		onDone()
 	}
-	r.parent.serializer.ScheduleOr(handleUpdate, onDone)
+	r.parent.Serializer.ScheduleOr(handleUpdate, onDone)
 }
 
 func (r *routeConfigWatcher) ResourceError(err error, onDone func()) {
 	handleError := func(context.Context) { r.parent.onRouteConfigResourceError(r.resourceName, err); onDone() }
-	r.parent.serializer.ScheduleOr(handleError, onDone)
+	r.parent.Serializer.ScheduleOr(handleError, onDone)
 }
 
 func (r *routeConfigWatcher) AmbientError(err error, onDone func()) {
 	handleError := func(context.Context) { r.parent.onRouteConfigResourceAmbientError(r.resourceName, err); onDone() }
-	r.parent.serializer.ScheduleOr(handleError, onDone)
+	r.parent.Serializer.ScheduleOr(handleError, onDone)
 }
 
 func (r *routeConfigWatcher) stop() {

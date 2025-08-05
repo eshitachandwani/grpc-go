@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package resolver
+package xdsdepsManager
 
 import (
 	"context"
@@ -26,25 +26,25 @@ import (
 // passed to the xDS client as part of the WatchResource() API.
 //
 // It watches a single cluster and handles callbacks from the xDS client by
-// scheduling them on the parent LB policy's serializer.
+// scheduling them on the parent LB policy's Serializer.
 type clusterWatcher struct {
 	name   string
-	parent *xdsDependencyManager
+	parent *XdsDependencyManager
 }
 
 func (cw *clusterWatcher) ResourceChanged(u *xdsresource.ClusterResourceData, onDone func()) {
 	handleUpdate := func(context.Context) { cw.parent.onClusterUpdate(cw.name, u.Resource); onDone() }
-	cw.parent.serializer.ScheduleOr(handleUpdate, onDone)
+	cw.parent.Serializer.ScheduleOr(handleUpdate, onDone)
 }
 
 func (cw *clusterWatcher) ResourceError(err error, onDone func()) {
 	handleResourceError := func(context.Context) { cw.parent.onClusterResourceError(cw.name, err); onDone() }
-	cw.parent.serializer.ScheduleOr(handleResourceError, onDone)
+	cw.parent.Serializer.ScheduleOr(handleResourceError, onDone)
 }
 
 func (cw *clusterWatcher) AmbientError(err error, onDone func()) {
 	handleError := func(context.Context) { cw.parent.onClusterAmbientError(cw.name, err); onDone() }
-	cw.parent.serializer.ScheduleOr(handleError, onDone)
+	cw.parent.Serializer.ScheduleOr(handleError, onDone)
 }
 
 // watcherState groups the state associated with a clusterWatcher.

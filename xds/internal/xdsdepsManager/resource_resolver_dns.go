@@ -16,7 +16,7 @@
  *
  */
 
-package resolver
+package xdsdepsManager
 
 import (
 	"context"
@@ -42,7 +42,7 @@ var (
 // It implements resolver.ClientConn interface to work with the DNS resolver.
 type dnsWatcher struct {
 	target string
-	parent *xdsDependencyManager
+	parent *XdsDependencyManager
 	dnsR   resolver.Resolver
 	// logger *grpclog.PrefixLogger
 
@@ -67,7 +67,7 @@ type dnsWatcher struct {
 //
 // The `dnsR` field is unset if we run into errors in this function. Therefore, a
 // nil check is required wherever we access that field.
-func newDNSResolver(target string, parent *xdsDependencyManager) *dnsWatcher {
+func newDNSResolver(target string, parent *XdsDependencyManager) *dnsWatcher {
 	ret := &dnsWatcher{
 		target: target,
 		// topLevelResolver: topLevelResolver,
@@ -81,7 +81,7 @@ func newDNSResolver(target string, parent *xdsDependencyManager) *dnsWatcher {
 		}
 		ret.updateReceived = true
 		handleUpdate := func(context.Context) { ret.parent.onDnsResourceError(ret.target, err) }
-		ret.parent.serializer.ScheduleOr(handleUpdate, func() {})
+		ret.parent.Serializer.ScheduleOr(handleUpdate, func() {})
 		// ret.topLevelResolver.onUpdate(func() {})
 		return ret
 	}
@@ -93,7 +93,7 @@ func newDNSResolver(target string, parent *xdsDependencyManager) *dnsWatcher {
 		}
 		ret.updateReceived = true
 		handleUpdate := func(context.Context) { ret.parent.onDnsResourceError(ret.target, err) }
-		ret.parent.serializer.ScheduleOr(handleUpdate, func() {})
+		ret.parent.Serializer.ScheduleOr(handleUpdate, func() {})
 		return ret
 	}
 	ret.dnsR = r
@@ -151,7 +151,7 @@ func (dr *dnsWatcher) UpdateState(state resolver.State) error {
 
 	// dr.topLevelResolver.onUpdate(func() {})
 	handleUpdate := func(context.Context) { dr.parent.onDnsResourceUpdate(dr.target, dr.endpoints) }
-	dr.parent.serializer.ScheduleOr(handleUpdate, func() {})
+	dr.parent.Serializer.ScheduleOr(handleUpdate, func() {})
 	return nil
 }
 
@@ -168,13 +168,13 @@ func (dr *dnsWatcher) ReportError(err error) {
 	// error.
 	if dr.updateReceived {
 		handleUpdate := func(context.Context) { dr.parent.onDnsAmbientError(dr.target, err) }
-		dr.parent.serializer.ScheduleOr(handleUpdate, func() {})
+		dr.parent.Serializer.ScheduleOr(handleUpdate, func() {})
 		dr.mu.Unlock()
 		return
 	}
 	dr.endpoints = nil
 	handleUpdate := func(context.Context) { dr.parent.onDnsResourceError(dr.target, err) }
-	dr.parent.serializer.ScheduleOr(handleUpdate, func() {})
+	dr.parent.Serializer.ScheduleOr(handleUpdate, func() {})
 	dr.updateReceived = true
 	dr.mu.Unlock()
 

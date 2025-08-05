@@ -44,7 +44,7 @@ import (
 	"google.golang.org/grpc/serviceconfig"
 	"google.golang.org/grpc/status"
 	xdsinternal "google.golang.org/grpc/xds/internal"
-	"google.golang.org/grpc/xds/internal/balancer/clusterresolver"
+	"google.golang.org/grpc/xds/internal/balancer/priority"
 	"google.golang.org/grpc/xds/internal/xdsclient"
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource"
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource/version"
@@ -106,7 +106,7 @@ func waitForResourceNames(ctx context.Context, resourceNamesCh chan []string, wa
 // - a channel that is closed when ExitIdle() is called
 // - a channel that is closed when the balancer is closed
 func registerWrappedClusterResolverPolicy(t *testing.T) (chan serviceconfig.LoadBalancingConfig, chan error, chan struct{}, chan struct{}) {
-	clusterresolverBuilder := balancer.Get(clusterresolver.Name)
+	clusterresolverBuilder := balancer.Get(priority.Name)
 	internal.BalancerUnregister(clusterresolverBuilder.Name())
 
 	lbCfgCh := make(chan serviceconfig.LoadBalancingConfig, 1)
@@ -114,7 +114,7 @@ func registerWrappedClusterResolverPolicy(t *testing.T) (chan serviceconfig.Load
 	exitIdleCh := make(chan struct{})
 	closeCh := make(chan struct{})
 
-	stub.Register(clusterresolver.Name, stub.BalancerFuncs{
+	stub.Register(priority.Name, stub.BalancerFuncs{
 		Init: func(bd *stub.BalancerData) {
 			bd.ChildBalancer = clusterresolverBuilder.Build(bd.ClientConn, bd.BuildOptions)
 		},

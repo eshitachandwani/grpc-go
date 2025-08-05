@@ -16,7 +16,7 @@
  *
  */
 
-package resolver
+package xdsdepsManager
 
 import (
 	"context"
@@ -26,18 +26,18 @@ import (
 
 type edsWatcher struct {
 	name   string
-	parent *xdsDependencyManager
+	parent *XdsDependencyManager
 }
 
 type edsWatcherState struct {
 	watcher *edsWatcher
 	// name string
 	cancelWatch func()
-	// parent      *xdsDependencyManager
+	// parent      *XdsDependencyManager
 	// stopped          *grpcsync.Event
 	// logger           *grpclog.PrefixLogger
 
-	// mu     sync.Mutex - no need because we will use serializer
+	// mu     sync.Mutex - no need because we will use Serializer
 	update *xdsresource.EndpointsUpdate // Nil indicates no update received so far.
 }
 
@@ -58,7 +58,7 @@ func (er *edsWatcherState) resolveNow() {
 
 // newEDSResolver returns an implementation of the endpointsResolver interface
 // that uses EDS to resolve the given name to endpoints.
-func newEDSResolver(name string, producer xdsresource.Producer, parent *xdsDependencyManager) *edsWatcherState {
+func newEDSResolver(name string, producer xdsresource.Producer, parent *XdsDependencyManager) *edsWatcherState {
 	w := &edsWatcher{
 		name:   name,
 		parent: parent,
@@ -94,7 +94,7 @@ func (er *edsWatcher) ResourceChanged(update *xdsresource.EndpointsResourceData,
 		er.parent.onEndpointResourceUpdate(er.name, update.Resource)
 		onDone()
 	}
-	er.parent.serializer.ScheduleOr(handleUpdate, onDone)
+	er.parent.Serializer.ScheduleOr(handleUpdate, onDone)
 }
 
 func (er *edsWatcher) ResourceError(err error, onDone func()) {
@@ -107,7 +107,7 @@ func (er *edsWatcher) ResourceError(err error, onDone func()) {
 		logger.Infof("EDS discovery mechanism for resource %q reported resource error: %v", er.name, err)
 	}
 	handleUpdate := func(context.Context) { er.parent.onEndpointResourceError(er.name, err); onDone() }
-	er.parent.serializer.ScheduleOr(handleUpdate, onDone)
+	er.parent.Serializer.ScheduleOr(handleUpdate, onDone)
 
 	// Report an empty update that would result in no priority child being
 	// created for this discovery mechanism. This would result in the priority
@@ -132,5 +132,5 @@ func (er *edsWatcher) AmbientError(err error, onDone func()) {
 		logger.Infof("EDS discovery mechanism for resource %q reported ambient error: %v", er.name, err)
 	}
 	handleUpdate := func(context.Context) { er.parent.onEndpointAmbientError(er.name, err); onDone() }
-	er.parent.serializer.ScheduleOr(handleUpdate, onDone)
+	er.parent.Serializer.ScheduleOr(handleUpdate, onDone)
 }

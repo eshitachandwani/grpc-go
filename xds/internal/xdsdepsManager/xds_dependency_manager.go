@@ -15,13 +15,16 @@
  *
  */
 
-package resolver
+// xdsdepsManager resolves all resources
+package xdsdepsManager
 
 import (
 	"context"
-	"fmt"
+	"sync/atomic"
 
+	"google.golang.org/grpc/attributes"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/internal/grpcsync"
 	"google.golang.org/grpc/internal/pretty"
 	"google.golang.org/grpc/resolver"
@@ -35,38 +38,35 @@ const (
 )
 
 var errExceedsMaxDepth = status.Errorf(codes.Unavailable, "aggregate cluster graph exceeds max depth (%d)", aggregateClusterMaxDepth)
+var logger = grpclog.Component("xds")
 
-type xdsDependencyManager struct {
+type XdsDependencyManager struct {
 	// All methods on the dependency manager type except, are guaranteed to execute in the context of
-	// this serializer's callback. And since the serializer guarantees mutual
+	// this Serializer's callback. And since the Serializer guarantees mutual
 	// exclusion among these callbacks, we can get by without any mutexes to
 	// access all of the below defined state. The only exception is Close(),
 	// which does access some of this shared state, but it does so after
-	// cancelling the context passed to the serializer.
-	serializer         *grpcsync.CallbackSerializer
-	serializerCancel   context.CancelFunc
-	listenerName       string
-	watcher            *xdsResolver
-	dataplaneAuthority string
+	// cancelling the context passed to the Serializer.
+	Serializer         *grpcsync.CallbackSerializer
+	SerializerCancel   context.CancelFunc
+	Listenername       string
+	Watcher            Watcher
+	DataplaneAuthority string
 	// The underlying xdsClient which performs all xDS requests and responses.
-	xdsClient xdsclient.XDSClient
+	XdsClient xdsclient.XDSClient
 
 	// listener state
 	listenerWatcher     *listenerWatcher
-	listenerUpdateRecvd bool
+	ListenerUpdateRecvd bool
 	currentListener     xdsresource.ListenerUpdate
 
 	rdsResourceName        string
 	routeConfigWatcher     *routeConfigWatcher
-	routeConfigUpdateRecvd bool
+	RouteConfigUpdateRecvd bool
 	currentRouteConfig     xdsresource.RouteConfigUpdate
-	currentVirtualHost     *xdsresource.VirtualHost // Matched virtual host for quick access.
+	CurrentVirtualHost     *xdsresource.VirtualHost // Matched virtual host for quick access.
 
-	// activeClusters is a map from cluster name to information about the
-	// cluster that includes a ref count and load balancing configuration.
-	activeClusters    map[string]*clusterInfo
 	clustersFromRoute map[string]struct{} // clusters from route config
-	clustersFromSubs  map[string]struct{} // clusters from subscription
 
 	clusterWatchers map[string]*watcherState // Set of watchers and associated state, keyed by cluster name.
 	edsWatchers     map[string]*edsWatcherState
@@ -74,18 +74,25 @@ type xdsDependencyManager struct {
 
 	Clusters map[string]xdsresource.ClusterConfigOrError
 
+	// map for clustername to refCount
+	ClusterSubs map[string]*ClusterRefs
 	//xdsClient
+}
+
+type ClusterRefs struct {
+	name     string
+	refCount int32
+	xdm      *XdsDependencyManager
 }
 
 type XdsConfigOrError struct {
 	xdsresource.XdsConfig
-	error
+	Error error
 }
 
-func (xdm *xdsDependencyManager) build() {
+func (xdm *XdsDependencyManager) Build() {
 	//listener watcher
-
-	// Initialize the serializer used to synchronize the following:
+	// Initialize the Serializer used to synchronize the following:
 	// - updates from the xDS client. This could lead to generation of new
 	//   service config if resolution is complete.
 	// - completion of an RPC to a removed cluster causing the associated ref
@@ -93,24 +100,25 @@ func (xdm *xdsDependencyManager) build() {
 	// - stopping of a config selector that results in generation of new service
 	//   config.
 	// ctx, cancel := context.WithCancel(context.Background())
-	// xdm.serializer = grpcsync.NewCallbackSerializer(ctx)
-	// xdm.serializerCancel = cancel
+	// xdm.Serializer = grpcsync.NewCallbackSerializer(ctx)
+	// xdm.SerializerCancel = cancel
 	xdm.clusterWatchers = make(map[string]*watcherState)
 	xdm.dnsWatcher = make(map[string]*dnsWatcher)
 	xdm.edsWatchers = make(map[string]*edsWatcherState)
-	xdm.listenerWatcher = newListenerWatcher(xdm.listenerName, xdm) //pass xds dependency manager as parent)
+	xdm.listenerWatcher = newListenerWatcher(xdm.Listenername, xdm) //pass xds dependency manager as parent)
 	xdm.Clusters = make(map[string]xdsresource.ClusterConfigOrError)
+	xdm.ClusterSubs = make(map[string]*ClusterRefs)
 
 	//route watcher
 	//cds watcher
 	// eds watcher
-	// xdm.watcher.OnUpdate(XdsConfigOrError{error: nil})
+	// xdm.Watcher.OnUpdate(XdsConfigOrError{Error: nil})
 
 }
 
-func (xdm *xdsDependencyManager) Close() {
-	// xdm.serializerCancel()
-	// <-xdm.serializer.Done()
+func (xdm *XdsDependencyManager) Close() {
+	// xdm.SerializerCancel()
+	// <-xdm.Serializer.Done()
 	if xdm.listenerWatcher != nil {
 		xdm.listenerWatcher.stop()
 	}
@@ -128,23 +136,26 @@ func (xdm *xdsDependencyManager) Close() {
 		state.dnsR.Close()
 	}
 
-	// Cancel the context passed to the serializer and wait for any scheduled
+	// Cancel the context passed to the Serializer and wait for any scheduled
 	// callbacks to complete. Canceling the context ensures that no new
 	// callbacks will be scheduled.
 }
 
-func (xdm *xdsDependencyManager) sendError(err error) {
-	xdm.watcher.OnUpdate(XdsConfigOrError{error: err})
+func (xdm *XdsDependencyManager) sendError(err error) {
+	xdm.Watcher.OnUpdate(XdsConfigOrError{Error: err})
 }
 
-func (xdm *xdsDependencyManager) sendUpdate() {
+func (xdm *XdsDependencyManager) sendUpdate() {
 	configUpdate := xdsresource.XdsConfig{}
 	configUpdate.Listener = xdm.currentListener
 	configUpdate.Route_config = xdm.currentRouteConfig
-	configUpdate.Virtual_host = xdm.currentVirtualHost
+	configUpdate.Virtual_host = xdm.CurrentVirtualHost
 	configUpdate.Clusters = make(map[string]xdsresource.ClusterConfigOrError)
 	clustersTowatch := make(map[string]struct{})
 	for cluster := range xdm.clustersFromRoute {
+		clustersTowatch[cluster] = struct{}{}
+	}
+	for cluster := range xdm.ClusterSubs {
 		clustersTowatch[cluster] = struct{}{}
 	}
 	// add clusters for subscription
@@ -155,6 +166,7 @@ func (xdm *xdsDependencyManager) sendUpdate() {
 	// clustermap := make(map[string]xdsresource.ClusterConfigOrError)
 	leaf_cluster := &[]string{}
 	for cluster := range clustersTowatch {
+		// can pass address of config.Clusters
 		haveAllClusterResources, err := xdm.populateCLutserConfig(cluster, 0, xdm.Clusters, edsResourcesSeen, dnsResourcesSeen, leaf_cluster)
 		if err != nil {
 			configUpdate.Clusters[cluster] = xdsresource.ClusterConfigOrError{Err: err}
@@ -165,7 +177,7 @@ func (xdm *xdsDependencyManager) sendUpdate() {
 	}
 	if haveAllResources {
 		configUpdate.Clusters = xdm.Clusters
-		xdm.watcher.OnUpdate(XdsConfigOrError{XdsConfig: configUpdate, error: nil})
+		xdm.Watcher.OnUpdate(XdsConfigOrError{XdsConfig: configUpdate, Error: nil})
 	}
 	//cancel watchers for clusters not in cluster map
 	// for clustername, state := range xdm.clusterWatchers {
@@ -174,29 +186,35 @@ func (xdm *xdsDependencyManager) sendUpdate() {
 	// 		delete(xdm.clusterWatchers, clustername)
 	// 	}
 	// }
-	// for edsname, state := range xdm.edsWatchers {
-	// 	if _, ok := edsResourcesSeen[edsname]; !ok {
-	// 		state.cancelWatch()
-	// 		delete(xdm.edsWatchers, edsname)
-	// 	}
-	// }
+	for edsname, state := range xdm.edsWatchers {
+		if _, ok := edsResourcesSeen[edsname]; !ok {
+			state.cancelWatch()
+			delete(xdm.edsWatchers, edsname)
+		}
+	}
+	for dnsname, state := range xdm.dnsWatcher {
+		if _, ok := dnsResourcesSeen[dnsname]; !ok {
+			state.stop()
+			delete(xdm.dnsWatcher, dnsname)
+		}
+	}
 	// close dns resolver
 	// clear cluster subs
 }
 
-func (xdm xdsDependencyManager) createAndAddWatcherForCluster(name string) {
+func (xdm XdsDependencyManager) createAndAddWatcherForCluster(name string) {
 	w := &clusterWatcher{
 		name:   name,
 		parent: &xdm,
 	}
 	ws := &watcherState{
 		watcher:     w,
-		cancelWatch: xdsresource.WatchCluster(xdm.xdsClient, name, w),
+		cancelWatch: xdsresource.WatchCluster(xdm.XdsClient, name, w),
 	}
 	xdm.clusterWatchers[name] = ws
 }
 
-func (xdm *xdsDependencyManager) populateCLutserConfig(clusterName string, depth int, clusterConfigMap map[string]xdsresource.ClusterConfigOrError, edsResourcesSeen map[string]struct{}, dnsNamesSeen map[string]struct{}, leafClusters *[]string) (bool, error) {
+func (xdm *XdsDependencyManager) populateCLutserConfig(clusterName string, depth int, clusterConfigMap map[string]xdsresource.ClusterConfigOrError, edsResourcesSeen map[string]struct{}, dnsNamesSeen map[string]struct{}, leafClusters *[]string) (bool, error) {
 	if depth >= aggregateClusterMaxDepth {
 		return true, errExceedsMaxDepth
 	}
@@ -281,7 +299,7 @@ func (xdm *xdsDependencyManager) populateCLutserConfig(clusterName string, depth
 		// start edsWatch if not already
 		edsstate, ok := xdm.edsWatchers[name]
 		if !ok {
-			xdm.edsWatchers[name] = newEDSResolver(name, xdm.xdsClient, xdm)
+			xdm.edsWatchers[name] = newEDSResolver(name, xdm.XdsClient, xdm)
 			return false, nil
 		}
 		if edsstate == nil {
@@ -356,15 +374,15 @@ type Watcher interface {
 }
 
 // Listener and route functions
-// Only executed in the context of a serializer callback.
-func (xdm *xdsDependencyManager) onListenerResourceUpdate(update xdsresource.ListenerUpdate) {
+// Only executed in the context of a Serializer callback.
+func (xdm *XdsDependencyManager) onListenerResourceUpdate(update xdsresource.ListenerUpdate) {
 	if logger.V(2) {
-		logger.Infof("Received update for Listener resource %q: %v", xdm.listenerName, pretty.ToJSON(update))
+		logger.Infof("Received update for Listener resource %q: %v", xdm.Listenername, pretty.ToJSON(update))
 	}
 
 	xdm.currentListener = update
 	//emchandwani - check where this is needed and if it should go in xdm or resolver
-	xdm.listenerUpdateRecvd = true
+	xdm.ListenerUpdateRecvd = true
 
 	if update.InlineRouteConfig != nil {
 		// If there was a previous route config watcher because of a non-inline
@@ -400,29 +418,30 @@ func (xdm *xdsDependencyManager) onListenerResourceUpdate(update xdsresource.Lis
 	xdm.rdsResourceName = update.RouteConfigName
 	if xdm.routeConfigWatcher != nil {
 		xdm.routeConfigWatcher.stop()
-		xdm.currentVirtualHost = nil
-		xdm.routeConfigUpdateRecvd = false
+		xdm.CurrentVirtualHost = nil
+		xdm.RouteConfigUpdateRecvd = false
 	}
 	xdm.routeConfigWatcher = newRouteConfigWatcher(xdm.rdsResourceName, xdm)
 }
 
-func (xdm *xdsDependencyManager) applyRouteConfigUpdate(update xdsresource.RouteConfigUpdate) {
-	matchVh := xdsresource.FindBestMatchingVirtualHost(xdm.dataplaneAuthority, update.VirtualHosts)
+func (xdm *XdsDependencyManager) applyRouteConfigUpdate(update xdsresource.RouteConfigUpdate) {
+	matchVh := xdsresource.FindBestMatchingVirtualHost(xdm.DataplaneAuthority, update.VirtualHosts)
 	if matchVh == nil {
 		// TODO(purnesh42h): Should this be a resource or ambient error? Note
 		// that its being called only from resource update methods when we have
 		// finished removing the previous update.
 		// emchandwani : call maybeapplyUpdate
 		// change to resource error
-		xdm.watcher.cc.ReportError(fmt.Errorf("no matching virtual host found for %q", xdm.dataplaneAuthority))
-		// xdm.watcher.OnUpdate(XdsConfigOrError{error: fmt.Errorf("no matching virtual host found for %q", xdm.dataplaneAuthority)})
+
+		// xdm.Watcher.cc.ReportError(fmt.Errorf("no matching virtual host found for %q", xdm.DataplaneAuthority))
+		// xdm.Watcher.OnUpdate(XdsConfigOrError{Error: fmt.Errorf("no matching virtual host found for %q", xdm.DataplaneAuthority)})
 		return
 	}
 	xdm.currentRouteConfig = update
-	xdm.currentVirtualHost = matchVh
-	xdm.routeConfigUpdateRecvd = true
+	xdm.CurrentVirtualHost = matchVh
+	xdm.RouteConfigUpdateRecvd = true
 
-	xdm.clustersFromRoute = getClustersFromVirtualHost(xdm.currentVirtualHost)
+	xdm.clustersFromRoute = getClustersFromVirtualHost(xdm.CurrentVirtualHost)
 
 	// create set of clusters to watch , from these and from cluster subscriptions
 
@@ -431,37 +450,37 @@ func (xdm *xdsDependencyManager) applyRouteConfigUpdate(update xdsresource.Route
 	// r.onResolutionComplete()
 }
 
-func (xdm *xdsDependencyManager) onListenerResourceAmbientError(err error) {
+func (xdm *XdsDependencyManager) onListenerResourceAmbientError(err error) {
 	if logger.V(2) {
-		logger.Infof("Received ambient error for Listener resource %q: %v", xdm.listenerName, err)
+		logger.Infof("Received ambient error for Listener resource %q: %v", xdm.Listenername, err)
 	}
 	//emchandwani : need to probably ignore or set in notes, current behavior - send Reporterror to clientconn
-	// xdm.watcher.OnUpdate(XdsConfigOrError{error: err})
+	// xdm.Watcher.OnUpdate(XdsConfigOrError{Error: err})
 	// r.onAmbientError(err)
-	xdm.watcher.cc.ReportError(err)
+	// xdm.Watcher.cc.ReportError(err)
 }
 
-// Only executed in the context of a serializer callback.
-func (xdm *xdsDependencyManager) onListenerResourceError(err error) {
+// Only executed in the context of a Serializer callback.
+func (xdm *XdsDependencyManager) onListenerResourceError(err error) {
 	if logger.V(2) {
-		logger.Infof("Received resource error for Listener resource %q: %v", xdm.listenerName, err)
+		logger.Infof("Received resource error for Listener resource %q: %v", xdm.Listenername, err)
 	}
 
-	xdm.listenerUpdateRecvd = false
+	xdm.ListenerUpdateRecvd = false
 	if xdm.routeConfigWatcher != nil {
 		xdm.routeConfigWatcher.stop()
 	}
 	xdm.rdsResourceName = ""
-	xdm.currentVirtualHost = nil
-	xdm.routeConfigUpdateRecvd = false
+	xdm.CurrentVirtualHost = nil
+	xdm.RouteConfigUpdateRecvd = false
 	xdm.routeConfigWatcher = nil
 	xdm.sendError(err)
 	// r.onResourceError(err)
-	// xdm.watcher.OnUpdate(XdsConfigOrError{error: err})
+	// xdm.Watcher.OnUpdate(XdsConfigOrError{Error: err})
 }
 
-// Only executed in the context of a serializer callback.
-func (xdm *xdsDependencyManager) onRouteConfigResourceUpdate(name string, update xdsresource.RouteConfigUpdate) {
+// Only executed in the context of a Serializer callback.
+func (xdm *XdsDependencyManager) onRouteConfigResourceUpdate(name string, update xdsresource.RouteConfigUpdate) {
 	if logger.V(2) {
 		logger.Infof("Received update for RouteConfiguration resource %q: %v", name, pretty.ToJSON(update))
 	}
@@ -474,20 +493,20 @@ func (xdm *xdsDependencyManager) onRouteConfigResourceUpdate(name string, update
 	xdm.applyRouteConfigUpdate(update)
 }
 
-// Only executed in the context of a serializer callback.
-func (xdm *xdsDependencyManager) onRouteConfigResourceAmbientError(name string, err error) {
+// Only executed in the context of a Serializer callback.
+func (xdm *XdsDependencyManager) onRouteConfigResourceAmbientError(name string, err error) {
 	if logger.V(2) {
 		logger.Infof("Received ambient error for RouteConfiguration resource %q: %v", name, err)
 	}
-	xdm.watcher.cc.ReportError(err)
+	// xdm.Watcher.cc.ReportError(err)
 	// r.onAmbientError(err)
 	//emchandwani : need to probably ignore or set in notes, current behavior - send Reporterror to clientconn
-	// xdm.watcher.OnUpdate(XdsConfigOrError{error: err})
+	// xdm.Watcher.OnUpdate(XdsConfigOrError{Error: err})
 
 }
 
-// Only executed in the context of a serializer callback.
-func (xdm *xdsDependencyManager) onRouteConfigResourceError(name string, err error) {
+// Only executed in the context of a Serializer callback.
+func (xdm *XdsDependencyManager) onRouteConfigResourceError(name string, err error) {
 	if logger.V(2) {
 		logger.Infof("Received resource error for RouteConfiguration resource %q: %v", name, err)
 	}
@@ -497,16 +516,16 @@ func (xdm *xdsDependencyManager) onRouteConfigResourceError(name string, err err
 		return
 	}
 	xdm.sendError(err)
-	// xdm.watcher.OnUpdate(XdsConfigOrError{error: err})
+	// xdm.Watcher.OnUpdate(XdsConfigOrError{Error: err})
 	// r.onResourceError(err)
 }
 
 func getClustersFromVirtualHost(vh *xdsresource.VirtualHost) map[string]struct{} {
 	clusters := make(map[string]struct{})
 	for _, rt := range vh.Routes {
-		if rt.ClusterSpecifierPlugin != "" {
-			clusters[clusterSpecifierPluginPrefix+rt.ClusterSpecifierPlugin] = struct{}{}
-		}
+		// if rt.ClusterSpecifierPlugin != "" {
+		// 	clusters[clusterSpecifierPluginPrefix+rt.ClusterSpecifierPlugin] = struct{}{}
+		// }
 		for cluster := range rt.WeightedClusters {
 			clusters[cluster] = struct{}{}
 		}
@@ -518,8 +537,8 @@ func getClustersFromVirtualHost(vh *xdsresource.VirtualHost) map[string]struct{}
 // mechanism generation process from the top-level cluster and if the cluster
 // graph is resolved, generates child policy config and pushes it down.
 //
-// Only executed in the context of a serializer callback.
-func (xdm *xdsDependencyManager) onClusterUpdate(name string, update xdsresource.ClusterUpdate) {
+// Only executed in the context of a Serializer callback.
+func (xdm *XdsDependencyManager) onClusterUpdate(name string, update xdsresource.ClusterUpdate) {
 	state := xdm.clusterWatchers[name]
 	if state == nil {
 		// We are currently not watching this cluster anymore. Return early.
@@ -536,8 +555,8 @@ func (xdm *xdsDependencyManager) onClusterUpdate(name string, update xdsresource
 // Handles an ambient error Cluster update from the xDS client to not stop
 // using the previously seen resource.
 //
-// Only executed in the context of a serializer callback.
-func (xdm *xdsDependencyManager) onClusterAmbientError(name string, err error) {
+// Only executed in the context of a Serializer callback.
+func (xdm *XdsDependencyManager) onClusterAmbientError(name string, err error) {
 	// logger.Warningf("Cluster resource %q received ambient error update: %v", name, err)
 
 	// if xdsresource.ErrType(err) != xdsresource.ErrorTypeConnection && b.childLB != nil {
@@ -552,15 +571,15 @@ func (xdm *xdsDependencyManager) onClusterAmbientError(name string, err error) {
 // previously seen resource. Propagates the error down to the child policy
 // if one exists, and puts the channel in TRANSIENT_FAILURE.
 //
-// Only executed in the context of a serializer callback.
-func (xdm *xdsDependencyManager) onClusterResourceError(name string, err error) {
+// Only executed in the context of a Serializer callback.
+func (xdm *XdsDependencyManager) onClusterResourceError(name string, err error) {
 	logger.Warningf("CDS watch for resource %q reported resource error", name)
 	// emchandwani , will need a field to set error for a particular cluster.
 	// b.closeChildPolicyAndReportTF(err)
 
 }
 
-func (xdm *xdsDependencyManager) onEndpointResourceUpdate(name string, update xdsresource.EndpointsUpdate) {
+func (xdm *XdsDependencyManager) onEndpointResourceUpdate(name string, update xdsresource.EndpointsUpdate) {
 	// write what to do on endpoint update
 	state := xdm.edsWatchers[name]
 	// if state.update.Localities == nil {
@@ -570,16 +589,16 @@ func (xdm *xdsDependencyManager) onEndpointResourceUpdate(name string, update xd
 	xdm.sendUpdate()
 }
 
-func (xdm *xdsDependencyManager) onEndpointAmbientError(name string, err error) {
+func (xdm *XdsDependencyManager) onEndpointAmbientError(name string, err error) {
 	//check what to do
 }
 
-func (xdm *xdsDependencyManager) onEndpointResourceError(name string, err error) {
+func (xdm *XdsDependencyManager) onEndpointResourceError(name string, err error) {
 	// xdm.sendError(err)
 	// emchandwani : find a way to get error each endpoint resource
 }
 
-func (xdm *xdsDependencyManager) onDnsResourceUpdate(name string, update []resolver.Endpoint) {
+func (xdm *XdsDependencyManager) onDnsResourceUpdate(name string, update []resolver.Endpoint) {
 	// write what to do on endpoint update
 	state, ok := xdm.dnsWatcher[name]
 	if ok {
@@ -587,10 +606,53 @@ func (xdm *xdsDependencyManager) onDnsResourceUpdate(name string, update []resol
 	}
 }
 
-func (xdm *xdsDependencyManager) onDnsAmbientError(name string, err error) {
+func (xdm *XdsDependencyManager) onDnsAmbientError(name string, err error) {
 	//check what to do
 }
 
-func (xdm *xdsDependencyManager) onDnsResourceError(name string, err error) {
+func (xdm *XdsDependencyManager) onDnsResourceError(name string, err error) {
 	// nil the endpoints
+}
+
+// XdsDependencyManagerKey is the type used as the key to store XdsDependencyManager in
+// the Attributes field of resolver.states.
+type XdsDependencyManagerKey struct{}
+
+// SetXdsDependencyManager returns a copy of state in which the Attributes field
+// is updated with the cluster name.
+func SetXdsDependencyManager(state resolver.State, depsmngr *XdsDependencyManager) resolver.State {
+	state.Attributes = state.Attributes.WithValue(XdsDependencyManagerKey{}, depsmngr)
+	return state
+}
+
+// GetXdsDependencyManager returns cluster name stored in attr.
+func GetXdsDependencyManager(attr *attributes.Attributes) (*XdsDependencyManager, bool) {
+	v := attr.Value(XdsDependencyManagerKey{})
+	config, ok := v.(*XdsDependencyManager)
+	return config, ok
+}
+
+func (xdm *XdsDependencyManager) Clustersubscription(name string) *ClusterRefs {
+	subs, ok := xdm.ClusterSubs[name]
+	if ok {
+		ref := &subs.refCount
+		atomic.AddInt32(ref, 1)
+		return subs
+	}
+	xdm.ClusterSubs[name] = &ClusterRefs{name, 1, xdm}
+	if _, ok := xdm.clustersFromRoute[name]; !ok {
+		xdm.sendUpdate()
+	}
+	return xdm.ClusterSubs[name]
+}
+
+func (c *ClusterRefs) Unsubscribe() {
+	ref := &c.refCount
+	if *ref <= 1 {
+		delete(c.xdm.ClusterSubs, c.name)
+	}
+	atomic.AddInt32(ref, -1)
+	if _, ok := c.xdm.clustersFromRoute[c.name]; !ok {
+		c.xdm.sendUpdate()
+	}
 }

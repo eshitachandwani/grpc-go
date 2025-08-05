@@ -37,6 +37,7 @@ import (
 	rinternal "google.golang.org/grpc/xds/internal/resolver/internal"
 	"google.golang.org/grpc/xds/internal/xdsclient"
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource"
+	"google.golang.org/grpc/xds/internal/xdsdepsManager"
 )
 
 // Scheme is the xDS resolver's scheme.
@@ -154,17 +155,17 @@ func (b *xdsResolverBuilder) Build(target resolver.Target, cc resolver.ClientCon
 	}
 	r.dataplaneAuthority = opts.Authority
 	r.ldsResourceName = bootstrap.PopulateResourceTemplate(template, target.Endpoint())
-	r.xdsDepManager = &xdsDependencyManager{listenerName: r.ldsResourceName, watcher: r, xdsClient: r.xdsClient, dataplaneAuthority: r.dataplaneAuthority, serializer: r.serializer, serializerCancel: r.serializerCancel}
-	r.xdsDepManager.build()
+	r.xdsDepManager = &xdsdepsManager.XdsDependencyManager{Listenername: r.ldsResourceName, Watcher: r, XdsClient: r.xdsClient, DataplaneAuthority: r.dataplaneAuthority, Serializer: r.serializer, SerializerCancel: r.serializerCancel}
+	r.xdsDepManager.Build()
 
 	return r, nil
 }
 
-func (r *xdsResolver) OnUpdate(config XdsConfigOrError) {
+func (r *xdsResolver) OnUpdate(config xdsdepsManager.XdsConfigOrError) {
 	//Send config to LB policy
 	//save feilds from xdsconfig for onResolutionComplete function
-	if config.error != nil {
-		r.onResourceError(config.error)
+	if config.Error != nil {
+		r.onResourceError(config.Error)
 		return
 	}
 	r.currentListener = config.Listener
@@ -252,7 +253,7 @@ type xdsResolver struct {
 
 	// xdsDepManager will start watches for all the resources and return
 	// XDSConfig with all the resources after resolving   all the dependencies.
-	xdsDepManager *xdsDependencyManager
+	xdsDepManager *xdsdepsManager.XdsDependencyManager
 
 	ldsResourceName string
 
@@ -335,6 +336,7 @@ func (r *xdsResolver) sendNewServiceConfig(cs stoppableConfigSelector) bool {
 		ServiceConfig: r.cc.ParseServiceConfig(string(sc)),
 	}, cs)
 	state = xdsresource.SetXDSConfig(state, r.xdsConfig)
+	state = xdsdepsManager.SetXdsDependencyManager(state, r.xdsDepManager)
 	if err := r.cc.UpdateState(xdsclient.SetClient(state, r.xdsClient)); err != nil {
 		if r.logger.V(2) {
 			r.logger.Infof("Channel rejected new state: %+v with error: %v", state, err)
@@ -445,7 +447,7 @@ type clusterInfo struct {
 // Listener and RouteConfiguration resources, from the management server, and
 // whether a matching virtual host was found in the RouteConfiguration resource.
 func (r *xdsResolver) resolutionComplete() bool {
-	return r.xdsDepManager.listenerUpdateRecvd && r.xdsDepManager.routeConfigUpdateRecvd && r.xdsDepManager.currentVirtualHost != nil
+	return r.xdsDepManager.ListenerUpdateRecvd && r.xdsDepManager.RouteConfigUpdateRecvd && r.xdsDepManager.CurrentVirtualHost != nil
 }
 
 // onResolutionComplete performs the following actions when resolution is
