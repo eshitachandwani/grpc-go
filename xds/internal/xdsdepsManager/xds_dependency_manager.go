@@ -218,10 +218,10 @@ func (xdm *XdsDependencyManager) populateCLutserConfig(clusterName string, depth
 	if depth >= aggregateClusterMaxDepth {
 		return true, errExceedsMaxDepth
 	}
-	_, ok := clusterConfigMap[clusterName]
-	if ok {
-		return true, nil
-	}
+	// _, ok := clusterConfigMap[clusterName]
+	// if ok {
+	// 	return true, nil
+	// }
 	// clusterConfigMap[clusterName] = xdsresource.ClusterConfigOrError{Err: fmt.Errorf("no CLuster data yet")}
 
 	state, ok := xdm.clusterWatchers[clusterName]
