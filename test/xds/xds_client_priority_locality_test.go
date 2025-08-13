@@ -63,7 +63,7 @@ func backendAddressesAndPorts(t *testing.T, servers []*stubserver.StubServer) ([
 //   - The test then deletes the locality that was originally in the higher
 //     priority.Verifies that all traffic is now reaching the only remaining
 //     endpoint.
-func (s) TestClientSideXDS_LocalityChangesPriority(t *testing.T) {
+func TestClientSideXDS_LocalityChangesPriority(t *testing.T) {
 	// Spin up a management server and two test service backends.
 	managementServer, nodeID, _, xdsResolver := setup.ManagementServerAndResolver(t)
 	backend0 := stubserver.StartTestService(t, nil)

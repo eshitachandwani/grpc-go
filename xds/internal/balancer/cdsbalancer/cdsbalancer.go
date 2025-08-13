@@ -341,9 +341,10 @@ func (b *cdsBalancer) UpdateClientConnState(state balancer.ClientConnState) erro
 	}
 
 	// Do nothing and return early if configuration has not changed.
-	if b.lbCfg != nil && b.lbCfg.ClusterName == lbCfg.ClusterName && !lbCfg.IsDynamic {
-		return nil
-	}
+	//do not need this since name could be same but state could be updated.
+	// if b.lbCfg != nil && b.lbCfg.ClusterName == lbCfg.ClusterName && !lbCfg.IsDynamic {
+	// 	return nil
+	// }
 	b.lbCfg = lbCfg
 
 	// Handle the update in a blocking fashion.
