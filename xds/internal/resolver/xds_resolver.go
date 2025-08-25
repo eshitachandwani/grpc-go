@@ -155,8 +155,7 @@ func (b *xdsResolverBuilder) Build(target resolver.Target, cc resolver.ClientCon
 	}
 	r.dataplaneAuthority = opts.Authority
 	r.ldsResourceName = bootstrap.PopulateResourceTemplate(template, target.Endpoint())
-	r.xdsDepManager = &xdsdepsManager.XdsDependencyManager{Listenername: r.ldsResourceName, Watcher: r, XdsClient: r.xdsClient, DataplaneAuthority: r.dataplaneAuthority, Serializer: r.serializer, SerializerCancel: r.serializerCancel}
-	r.xdsDepManager.Build()
+	r.xdsDepManager = xdsdepsManager.Build(r.ldsResourceName, r, r.xdsClient, r.dataplaneAuthority, r.serializer, r.serializerCancel)
 
 	return r, nil
 }

@@ -40,6 +40,8 @@ import (
 	xdsresolver "google.golang.org/grpc/xds/internal/resolver"
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource/version"
 
+	v3clusterpb "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
+	v3endpointpb "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	v3listenerpb "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	v3routepb "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	v3discoverypb "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
@@ -60,6 +62,8 @@ const (
 	defaultTestServiceName     = "service-name"
 	defaultTestRouteConfigName = "route-config-name"
 	defaultTestClusterName     = "cluster-name"
+	defaultTestEndpointName    = "endpoint-name"
+	defaultTestHostname        = "test-host"
 )
 
 // This is the expected service config when using default listener and route
@@ -276,6 +280,23 @@ func configureResourcesOnManagementServer(ctx context.Context, t *testing.T, mgm
 		NodeID:         nodeID,
 		Listeners:      listeners,
 		Routes:         routes,
+		SkipValidation: true,
+	}
+	if err := mgmtServer.Update(ctx, resources); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Spins up an xDS management server and configures it with a default listener
+// and route configuration resource. It also sets up an xDS bootstrap
+// configuration file that points to the above management server.
+func configureAllResourcesOnManagementServer(ctx context.Context, t *testing.T, mgmtServer *e2e.ManagementServer, nodeID string, listeners []*v3listenerpb.Listener, routes []*v3routepb.RouteConfiguration, clusters []*v3clusterpb.Cluster, endpoints []*v3endpointpb.ClusterLoadAssignment) {
+	resources := e2e.UpdateOptions{
+		NodeID:         nodeID,
+		Listeners:      listeners,
+		Routes:         routes,
+		Clusters:       clusters,
+		Endpoints:      endpoints,
 		SkipValidation: true,
 	}
 	if err := mgmtServer.Update(ctx, resources); err != nil {

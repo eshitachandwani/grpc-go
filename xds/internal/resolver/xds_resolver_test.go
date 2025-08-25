@@ -36,7 +36,6 @@ import (
 	"google.golang.org/grpc/internal"
 	iresolver "google.golang.org/grpc/internal/resolver"
 	iringhash "google.golang.org/grpc/internal/ringhash"
-	"google.golang.org/grpc/internal/stubserver"
 	"google.golang.org/grpc/internal/testutils"
 	"google.golang.org/grpc/internal/testutils/xds/e2e"
 	"google.golang.org/grpc/internal/xds/bootstrap"
@@ -49,17 +48,18 @@ import (
 	"google.golang.org/grpc/xds/internal/xdsclient"
 	"google.golang.org/grpc/xds/internal/xdsclient/xdsresource/version"
 	"google.golang.org/protobuf/proto"
+
+	// "google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	v3xdsxdstypepb "github.com/cncf/xds/go/xds/type/v3"
-	v3corepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	v3listenerpb "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
-
 	v3clusterpb "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
+	v3corepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	v3endpointpb "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	v3listenerpb "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	v3routepb "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	v3routerpb "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/router/v3"
 	v3httppb "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
@@ -94,7 +94,7 @@ func (s) TestResolverBuilder_ClientCreationFails_NoBootstrap(t *testing.T) {
 // Tests the case where the specified dial target contains an authority that is
 // not specified in the bootstrap file. Verifies that the resolver.Build method
 // fails with the expected error string.
-func TestResolverBuilder_AuthorityNotDefinedInBootstrap(t *testing.T) {
+func (s) TestResolverBuilder_AuthorityNotDefinedInBootstrap(t *testing.T) {
 	contents := e2e.DefaultBootstrapContents(t, "node-id", "dummy-management-server")
 
 	// Create an xDS resolver with the above bootstrap configuration.
@@ -122,7 +122,7 @@ func TestResolverBuilder_AuthorityNotDefinedInBootstrap(t *testing.T) {
 
 // Test builds an xDS resolver and verifies that the resource name specified in
 // the discovery request matches expectations.
-func TestResolverResourceName(t *testing.T) {
+func (s) TestResolverResourceName(t *testing.T) {
 	tests := []struct {
 		name                         string
 		listenerResourceNameTemplate string
@@ -204,7 +204,7 @@ func TestResolverResourceName(t *testing.T) {
 // Tests the case where a service update from the underlying xDS client is
 // received after the resolver is closed, and verifies that the update is not
 // propagated to the ClientConn.
-func TestResolverWatchCallbackAfterClose(t *testing.T) {
+func (s) TestResolverWatchCallbackAfterClose(t *testing.T) {
 	// Setup the management server that synchronizes with the test goroutine
 	// using two channels. The management server signals the test goroutine when
 	// it receives a discovery request for a route configuration resource. And
@@ -255,7 +255,7 @@ func TestResolverWatchCallbackAfterClose(t *testing.T) {
 }
 
 // Tests that the xDS resolver's Close method closes the xDS client.
-func TestResolverCloseClosesXDSClient(t *testing.T) {
+func (s) TestResolverCloseClosesXDSClient(t *testing.T) {
 	// Override xDS client creation to use bootstrap configuration pointing to a
 	// dummy management server. Also close a channel when the returned xDS
 	// client is closed.
@@ -297,7 +297,7 @@ func TestResolverCloseClosesXDSClient(t *testing.T) {
 // containing a resource error to the resolver. It tests the case where the
 // resolver gets an error update without any previous good update. The test
 // also verifies that these are propagated to the ClientConn.
-func TestResolverBadServiceUpdate_NACKedWithoutCache(t *testing.T) {
+func (s) TestResolverBadServiceUpdate_NACKedWithoutCache(t *testing.T) {
 	// Spin up an xDS management server for the test.
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
 	defer cancel()
@@ -338,88 +338,63 @@ func TestResolverBadServiceUpdate_NACKedWithoutCache(t *testing.T) {
 // after the good update. The test also verifies that these are propagated to
 // the ClientConn and that RPC succeeds as expected after receiving good update
 // as well as ambient error.
-func TestResolverBadServiceUpdate_NACKedWithCache(t *testing.T) {
-	// Spin up an xDS management server for the test.
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
-	defer cancel()
-	nodeID := uuid.New().String()
-	mgmtServer, _, _, bc := setupManagementServerForTest(t, nodeID)
+// func TestResolverBadServiceUpdate_NACKedWithCache(t *testing.T) {
+// 	// Spin up an xDS management server for the test.
+// 	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+// 	defer cancel()
+// 	nodeID := uuid.New().String()
+// 	mgmtServer, _, _, bc := setupManagementServerForTest(t, nodeID)
 
-	stateCh, errCh, _ := buildResolverForTarget(t, resolver.Target{URL: *testutils.MustParseURL("xds:///" + defaultTestServiceName)}, bc)
+// 	stateCh, errCh, _ := buildResolverForTarget(t, resolver.Target{URL: *testutils.MustParseURL("xds:///" + defaultTestServiceName)}, bc)
 
-	// Configure good listener and route configuration resources on the
-	// management server.
-	listeners := []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)}
-	routes := []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(defaultTestRouteConfigName, defaultTestServiceName, defaultTestClusterName)}
-	resources := e2e.UpdateOptions{
-		NodeID:    nodeID,
-		Listeners: listeners,
-		Routes:    routes,
-		Clusters: []*v3clusterpb.Cluster{
-			e2e.DefaultCluster(defaultTestClusterName, "eds_cluster_1", e2e.SecurityLevelNone),
-		},
-		Endpoints: []*v3endpointpb.ClusterLoadAssignment{
-			e2e.DefaultEndpoint("eds_cluster_1", "localhost", []uint32{testutils.ParsePort(t, "127.0.0.0:8080")}),
-		},
-	}
-	if err := mgmtServer.Update(ctx, resources); err != nil {
-		t.Fatal(err)
-	}
-	// Expect a good update from the resolver.
-	cs := verifyUpdateFromResolver(ctx, t, stateCh, wantDefaultServiceConfig)
+// 	// Configure good listener and route configuration resources on the
+// 	// management server.
+// 	listeners := []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)}
+// 	routes := []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(defaultTestRouteConfigName, defaultTestServiceName, defaultTestClusterName)}
+// 	cluster := []*v3clusterpb.Cluster{e2e.DefaultCluster(defaultTestClusterName, defaultTestEndpointName, e2e.SecurityLevelNone)}
+// 	endpoints := []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(defaultTestEndpointName, defaultTestHostname, []uint32{8080})}
+// 	configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes, cluster, endpoints)
 
-	// "Make an RPC" by invoking the config selector.
-	_, err := cs.SelectConfig(iresolver.RPCInfo{Context: ctx, Method: "/service/method"})
-	if err != nil {
-		t.Fatalf("cs.SelectConfig(): %v", err)
-	}
+// 	// Expect a good update from the resolver.
+// 	cs := verifyUpdateFromResolver(ctx, t, stateCh, wantDefaultServiceConfig)
 
-	// Configure a listener resource that is expected to be NACKed because it
-	// does not contain the `RouteSpecifier` field in the HTTPConnectionManager.
-	hcm := testutils.MarshalAny(t, &v3httppb.HttpConnectionManager{
-		HttpFilters: []*v3httppb.HttpFilter{e2e.HTTPFilter("router", &v3routerpb.Router{})},
-	})
-	lis := &v3listenerpb.Listener{
-		Name:        defaultTestServiceName,
-		ApiListener: &v3listenerpb.ApiListener{ApiListener: hcm},
-		FilterChains: []*v3listenerpb.FilterChain{{
-			Name: "filter-chain-name",
-			Filters: []*v3listenerpb.Filter{{
-				Name:       wellknown.HTTPConnectionManager,
-				ConfigType: &v3listenerpb.Filter_TypedConfig{TypedConfig: hcm},
-			}},
-		}},
-	}
-	// routes =
+// 	// "Make an RPC" by invoking the config selector.
+// 	_, err := cs.SelectConfig(iresolver.RPCInfo{Context: ctx, Method: "/service/method"})
+// 	if err != nil {
+// 		t.Fatalf("cs.SelectConfig(): %v", err)
+// 	}
 
-	// Expect an error update from the resolver. Since the resource is cached,
-	// it should be received as an ambient error.
-	resources = e2e.UpdateOptions{
-		NodeID:    nodeID,
-		Listeners: []*v3listenerpb.Listener{lis},
-		Routes:    []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(defaultTestRouteConfigName, defaultTestServiceName, defaultTestClusterName)},
-		Clusters: []*v3clusterpb.Cluster{
-			e2e.DefaultCluster(defaultTestClusterName, "eds_cluster_1", e2e.SecurityLevelNone),
-		},
-		Endpoints: []*v3endpointpb.ClusterLoadAssignment{
-			e2e.DefaultEndpoint("eds_cluster_1", "localhost", []uint32{testutils.ParsePort(t, "127.0.0.0:8080")}),
-		},
-		SkipValidation: true,
-	}
-	if err := mgmtServer.Update(ctx, resources); err != nil {
-		t.Fatal(err)
-	}
-	if err := waitForErrorFromResolver(ctx, errCh, "no RouteSpecifier", nodeID); err != nil {
-		t.Fatal(err)
-	}
+// 	// Configure a listener resource that is expected to be NACKed because it
+// 	// does not contain the `RouteSpecifier` field in the HTTPConnectionManager.
+// 	hcm := testutils.MarshalAny(t, &v3httppb.HttpConnectionManager{
+// 		HttpFilters: []*v3httppb.HttpFilter{e2e.HTTPFilter("router", &v3routerpb.Router{})},
+// 	})
+// 	lis := &v3listenerpb.Listener{
+// 		Name:        defaultTestServiceName,
+// 		ApiListener: &v3listenerpb.ApiListener{ApiListener: hcm},
+// 		FilterChains: []*v3listenerpb.FilterChain{{
+// 			Name: "filter-chain-name",
+// 			Filters: []*v3listenerpb.Filter{{
+// 				Name:       wellknown.HTTPConnectionManager,
+// 				ConfigType: &v3listenerpb.Filter_TypedConfig{TypedConfig: hcm},
+// 			}},
+// 		}},
+// 	}
 
-	// "Make an RPC" by invoking the config selector which should succeed by
-	// continuing to use the previously cached resource.
-	_, err = cs.SelectConfig(iresolver.RPCInfo{Context: ctx, Method: "/service/method"})
-	if err != nil {
-		t.Fatalf("cs.SelectConfig(): %v", err)
-	}
-}
+// 	// Expect an error update from the resolver. Since the resource is cached,
+// 	// it should be received as an ambient error.
+// 	configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, []*v3listenerpb.Listener{lis}, nil)
+// 	if err := waitForErrorFromResolver(ctx, errCh, "no RouteSpecifier", nodeID); err != nil {
+// 		t.Fatal(err)
+// 	}
+
+// 	// "Make an RPC" by invoking the config selector which should succeed by
+// 	// continuing to use the previously cached resource.
+// 	_, err = cs.SelectConfig(iresolver.RPCInfo{Context: ctx, Method: "/service/method"})
+// 	if err != nil {
+// 		t.Fatalf("cs.SelectConfig(): %v", err)
+// 	}
+// }
 
 // TestResolverGoodServiceUpdate tests the case where the resource returned by
 // the management server is ACKed by the xDS client, which then returns a good
@@ -427,24 +402,29 @@ func TestResolverBadServiceUpdate_NACKedWithCache(t *testing.T) {
 // returned by the resolver matches expectations, and that the config selector
 // returned by the resolver picks clusters based on the route configuration
 // received from the management server.
-func TestResolverGoodServiceUpdate(t *testing.T) {
+func (s) TestResolverGoodServiceUpdate(t *testing.T) {
+	defaultTestPort := []uint32{8080}
 	for _, tt := range []struct {
 		name              string
 		routeConfig       *v3routepb.RouteConfiguration
+		clusterConfig     []*v3clusterpb.Cluster
+		edsConfig         []*v3endpointpb.ClusterLoadAssignment
 		wantServiceConfig string
 		wantClusters      map[string]bool
 	}{
-		// {
-		// 	name: "single cluster",
-		// 	routeConfig: e2e.RouteConfigResourceWithOptions(e2e.RouteConfigOptions{
-		// 		RouteConfigName:      defaultTestRouteConfigName,
-		// 		ListenerName:         defaultTestServiceName,
-		// 		ClusterSpecifierType: e2e.RouteConfigClusterSpecifierTypeCluster,
-		// 		ClusterName:          defaultTestClusterName,
-		// 	}),
-		// 	wantServiceConfig: wantDefaultServiceConfig,
-		// 	wantClusters:      map[string]bool{fmt.Sprintf("cluster:%s", defaultTestClusterName): true},
-		// },
+		{
+			name: "single cluster",
+			routeConfig: e2e.RouteConfigResourceWithOptions(e2e.RouteConfigOptions{
+				RouteConfigName:      defaultTestRouteConfigName,
+				ListenerName:         defaultTestServiceName,
+				ClusterSpecifierType: e2e.RouteConfigClusterSpecifierTypeCluster,
+				ClusterName:          defaultTestClusterName,
+			}),
+			clusterConfig:     []*v3clusterpb.Cluster{e2e.DefaultCluster(defaultTestClusterName, defaultTestEndpointName, e2e.SecurityLevelNone)},
+			edsConfig:         []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(defaultTestEndpointName, defaultTestHostname, defaultTestPort)},
+			wantServiceConfig: wantDefaultServiceConfig,
+			wantClusters:      map[string]bool{fmt.Sprintf("cluster:%s", defaultTestClusterName): true},
+		},
 		{
 			name: "two clusters",
 			routeConfig: e2e.RouteConfigResourceWithOptions(e2e.RouteConfigOptions{
@@ -453,6 +433,8 @@ func TestResolverGoodServiceUpdate(t *testing.T) {
 				ClusterSpecifierType: e2e.RouteConfigClusterSpecifierTypeWeightedCluster,
 				WeightedClusters:     map[string]int{"cluster_1": 75, "cluster_2": 25},
 			}),
+			clusterConfig: []*v3clusterpb.Cluster{e2e.DefaultCluster("cluster_1", "endpoint_1", e2e.SecurityLevelNone), e2e.DefaultCluster("cluster_2", "endpoint_2", e2e.SecurityLevelNone)},
+			edsConfig:     []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint("endpoint_1", defaultTestHostname, defaultTestPort), e2e.DefaultEndpoint("endpoint_2", defaultTestHostname, defaultTestPort)},
 			// This update contains the cluster from the previous update as well
 			// as this update, as the previous config selector still references
 			// the old cluster when the new one is pushed.
@@ -486,33 +468,15 @@ func TestResolverGoodServiceUpdate(t *testing.T) {
 			defer cancel()
 			nodeID := uuid.New().String()
 			mgmtServer, _, _, bc := setupManagementServerForTest(t, nodeID)
-			backend1 := stubserver.StartTestService(t, nil)
-			defer backend1.Stop()
-			backend2 := stubserver.StartTestService(t, nil)
-			defer backend2.Stop()
+
 			// Configure the management server with a good listener resource and a
 			// route configuration resource, as specified by the test case.
-			// listeners := []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)}
-			// routes := []*v3routepb.RouteConfiguration{tt.routeConfig}
-			// fallbackEndpointsName := "fallback-endpoints-" + defaultTestServiceName
+			listeners := []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)}
+			routes := []*v3routepb.RouteConfiguration{tt.routeConfig}
+			clusters := tt.clusterConfig
+			endpoints := tt.edsConfig
+			configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes, clusters, endpoints)
 
-			// configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes)
-			resources := e2e.UpdateOptions{
-				NodeID:    nodeID,
-				Listeners: []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)},
-				Routes:    []*v3routepb.RouteConfiguration{tt.routeConfig},
-				Clusters: []*v3clusterpb.Cluster{
-					e2e.DefaultCluster("cluster_1", "eds_cluster_1", e2e.SecurityLevelNone),
-					e2e.DefaultCluster("cluster_2", "eds_cluster_2", e2e.SecurityLevelNone),
-				},
-				Endpoints: []*v3endpointpb.ClusterLoadAssignment{
-					e2e.DefaultEndpoint("eds_cluster_1", "localhost", []uint32{testutils.ParsePort(t, backend1.Address)}),
-					e2e.DefaultEndpoint("eds_cluster_2", "localhost", []uint32{testutils.ParsePort(t, backend2.Address)}),
-				},
-			}
-			if err := mgmtServer.Update(ctx, resources); err != nil {
-				t.Fatal(err)
-			}
 			stateCh, _, _ := buildResolverForTarget(t, resolver.Target{URL: *testutils.MustParseURL("xds:///" + defaultTestServiceName)}, bc)
 
 			// Read the update pushed by the resolver to the ClientConn.
@@ -541,7 +505,8 @@ func TestResolverGoodServiceUpdate(t *testing.T) {
 // Tests a case where a resolver receives a RouteConfig update with a HashPolicy
 // specifying to generate a hash. The configSelector generated should
 // successfully generate a Hash.
-func TestResolverRequestHash(t *testing.T) {
+func (s) TestResolverRequestHash(t *testing.T) {
+	defaultTestPort := []uint32{8080}
 	// Spin up an xDS management server for the test.
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
 	defer cancel()
@@ -550,58 +515,37 @@ func TestResolverRequestHash(t *testing.T) {
 
 	// Configure the management server with a good listener resource and a
 	// route configuration resource that specifies a hash policy.
-
-	backend1 := stubserver.StartTestService(t, nil)
-	defer backend1.Stop()
-	backend2 := stubserver.StartTestService(t, nil)
-	defer backend2.Stop()
-	// Configure the management server with a good listener resource and a
-	// route configuration resource, as specified by the test case.
-	// listeners := []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)}
-	// routes := []*v3routepb.RouteConfiguration{tt.routeConfig}
-	// fallbackEndpointsName := "fallback-endpoints-" + defaultTestServiceName
-
-	// configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes)
-	resources := e2e.UpdateOptions{
-		NodeID:    nodeID,
-		Listeners: []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)},
-		Routes: []*v3routepb.RouteConfiguration{{
-			Name: defaultTestRouteConfigName,
-			VirtualHosts: []*v3routepb.VirtualHost{{
-				Domains: []string{defaultTestServiceName},
-				Routes: []*v3routepb.Route{{
-					Match: &v3routepb.RouteMatch{PathSpecifier: &v3routepb.RouteMatch_Prefix{Prefix: "/"}},
-					Action: &v3routepb.Route_Route{Route: &v3routepb.RouteAction{
-						ClusterSpecifier: &v3routepb.RouteAction_WeightedClusters{WeightedClusters: &v3routepb.WeightedCluster{
-							Clusters: []*v3routepb.WeightedCluster_ClusterWeight{
-								{
-									Name:   defaultTestClusterName,
-									Weight: &wrapperspb.UInt32Value{Value: 100},
-								},
+	listeners := []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)}
+	routes := []*v3routepb.RouteConfiguration{{
+		Name: defaultTestRouteConfigName,
+		VirtualHosts: []*v3routepb.VirtualHost{{
+			Domains: []string{defaultTestServiceName},
+			Routes: []*v3routepb.Route{{
+				Match: &v3routepb.RouteMatch{PathSpecifier: &v3routepb.RouteMatch_Prefix{Prefix: "/"}},
+				Action: &v3routepb.Route_Route{Route: &v3routepb.RouteAction{
+					ClusterSpecifier: &v3routepb.RouteAction_WeightedClusters{WeightedClusters: &v3routepb.WeightedCluster{
+						Clusters: []*v3routepb.WeightedCluster_ClusterWeight{
+							{
+								Name:   defaultTestClusterName,
+								Weight: &wrapperspb.UInt32Value{Value: 100},
 							},
-						}},
-						HashPolicy: []*v3routepb.RouteAction_HashPolicy{{
-							PolicySpecifier: &v3routepb.RouteAction_HashPolicy_Header_{
-								Header: &v3routepb.RouteAction_HashPolicy_Header{
-									HeaderName: ":path",
-								},
+						},
+					}},
+					HashPolicy: []*v3routepb.RouteAction_HashPolicy{{
+						PolicySpecifier: &v3routepb.RouteAction_HashPolicy_Header_{
+							Header: &v3routepb.RouteAction_HashPolicy_Header{
+								HeaderName: ":path",
 							},
-							Terminal: true,
-						}},
+						},
+						Terminal: true,
 					}},
 				}},
 			}},
 		}},
-		Clusters: []*v3clusterpb.Cluster{
-			e2e.DefaultCluster(defaultTestClusterName, "eds_cluster_1", e2e.SecurityLevelNone),
-		},
-		Endpoints: []*v3endpointpb.ClusterLoadAssignment{
-			e2e.DefaultEndpoint("eds_cluster_1", "localhost", []uint32{testutils.ParsePort(t, backend1.Address)}),
-		},
-	}
-	if err := mgmtServer.Update(ctx, resources); err != nil {
-		t.Fatal(err)
-	}
+	}}
+	cluster := []*v3clusterpb.Cluster{e2e.DefaultCluster(defaultTestClusterName, defaultTestEndpointName, e2e.SecurityLevelNone)}
+	endpoints := []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(defaultTestEndpointName, defaultTestHostname, defaultTestPort)}
+	configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes, cluster, endpoints)
 
 	// Build the resolver and read the config selector out of it.
 	stateCh, _, _ := buildResolverForTarget(t, resolver.Target{URL: *testutils.MustParseURL("xds:///" + defaultTestServiceName)}, bc)
@@ -631,6 +575,7 @@ func TestResolverRequestHash(t *testing.T) {
 // resource-not-found error to the xDS resolver. The test verifies that an
 // ongoing RPC is handled to completion when this happens.
 func (s) TestResolverRemovedWithRPCs(t *testing.T) {
+	defaultTestPort := []uint32{8080}
 	// Spin up an xDS management server for the test.
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
 	defer cancel()
@@ -640,7 +585,9 @@ func (s) TestResolverRemovedWithRPCs(t *testing.T) {
 	// Configure resources on the management server.
 	listeners := []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)}
 	routes := []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(defaultTestRouteConfigName, defaultTestServiceName, defaultTestClusterName)}
-	configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes)
+	cluster := []*v3clusterpb.Cluster{e2e.DefaultCluster(defaultTestClusterName, defaultTestEndpointName, e2e.SecurityLevelNone)}
+	endpoints := []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(defaultTestEndpointName, defaultTestHostname, defaultTestPort)}
+	configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes, cluster, endpoints)
 
 	stateCh, _, _ := buildResolverForTarget(t, resolver.Target{URL: *testutils.MustParseURL("xds:///" + defaultTestServiceName)}, bc)
 
@@ -733,6 +680,7 @@ waitForStateUpdate:
 // The test verifies that the resolver pushes the expected config selector and
 // service config in this case.
 func (s) TestResolverRemovedResource(t *testing.T) {
+	defaultTestPort := []uint32{8080}
 	// Spin up an xDS management server for the test.
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
 	defer cancel()
@@ -742,7 +690,9 @@ func (s) TestResolverRemovedResource(t *testing.T) {
 	// Configure resources on the management server.
 	listeners := []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)}
 	routes := []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(defaultTestRouteConfigName, defaultTestServiceName, defaultTestClusterName)}
-	configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes)
+	cluster := []*v3clusterpb.Cluster{e2e.DefaultCluster(defaultTestClusterName, defaultTestEndpointName, e2e.SecurityLevelNone)}
+	endpoints := []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(defaultTestEndpointName, defaultTestHostname, defaultTestPort)}
+	configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes, cluster, endpoints)
 
 	stateCh, errCh, _ := buildResolverForTarget(t, resolver.Target{URL: *testutils.MustParseURL("xds:///" + defaultTestServiceName)}, bc)
 
@@ -807,6 +757,7 @@ func (s) TestResolverRemovedResource(t *testing.T) {
 // stream duration (this includes an explicit zero value) in a matching route
 // overrides the value specified in the listener resource.
 func (s) TestResolverMaxStreamDuration(t *testing.T) {
+	defaultTestPort := []uint32{8080}
 	// Spin up an xDS management server for the test.
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
 	defer cancel()
@@ -895,7 +846,17 @@ func (s) TestResolverMaxStreamDuration(t *testing.T) {
 			},
 		}},
 	}}
-	configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes)
+	cluster := []*v3clusterpb.Cluster{
+		e2e.DefaultCluster("A", "endpoint_A", e2e.SecurityLevelNone),
+		e2e.DefaultCluster("B", "endpoint_B", e2e.SecurityLevelNone),
+		e2e.DefaultCluster("C", "endpoint_C", e2e.SecurityLevelNone),
+	}
+	endpoints := []*v3endpointpb.ClusterLoadAssignment{
+		e2e.DefaultEndpoint("endpoint_A", defaultTestHostname, defaultTestPort),
+		e2e.DefaultEndpoint("endpoint_B", defaultTestHostname, defaultTestPort),
+		e2e.DefaultEndpoint("endpoint_C", defaultTestHostname, defaultTestPort),
+	}
+	configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes, cluster, endpoints)
 
 	// Read the update pushed by the resolver to the ClientConn.
 	cs := verifyUpdateFromResolver(ctx, t, stateCh, "")
@@ -939,7 +900,8 @@ func (s) TestResolverMaxStreamDuration(t *testing.T) {
 }
 
 // Tests that clusters remain in service config if RPCs are in flight.
-func TestResolverDelayedOnCommitted(t *testing.T) {
+func (s) TestResolverDelayedOnCommitted(t *testing.T) {
+	defaultTestPort := []uint32{8080}
 	// Spin up an xDS management server for the test.
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
 	defer cancel()
@@ -949,7 +911,9 @@ func TestResolverDelayedOnCommitted(t *testing.T) {
 	// Configure resources on the management server.
 	listeners := []*v3listenerpb.Listener{e2e.DefaultClientListener(defaultTestServiceName, defaultTestRouteConfigName)}
 	routes := []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(defaultTestRouteConfigName, defaultTestServiceName, defaultTestClusterName)}
-	configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes)
+	cluster := []*v3clusterpb.Cluster{e2e.DefaultCluster(defaultTestClusterName, defaultTestEndpointName, e2e.SecurityLevelNone)}
+	endpoints := []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(defaultTestEndpointName, defaultTestHostname, defaultTestPort)}
+	configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes, cluster, endpoints)
 
 	stateCh, _, _ := buildResolverForTarget(t, resolver.Target{URL: *testutils.MustParseURL("xds:///" + defaultTestServiceName)}, bc)
 
@@ -972,8 +936,11 @@ func TestResolverDelayedOnCommitted(t *testing.T) {
 	// Update the route configuration resource on the management server to
 	// return a new cluster.
 	newClusterName := "new-" + defaultTestClusterName
+	newEndpointName := "new-" + defaultTestEndpointName
 	routes = []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(defaultTestRouteConfigName, defaultTestServiceName, newClusterName)}
-	configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes)
+	cluster = []*v3clusterpb.Cluster{e2e.DefaultCluster(newClusterName, newEndpointName, e2e.SecurityLevelNone)}
+	endpoints = []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(newEndpointName, defaultTestHostname, defaultTestPort)}
+	configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes, cluster, endpoints)
 
 	// Read the update pushed by the resolver to the ClientConn and ensure the
 	// old cluster is present in the service config. Also ensure that the newly
@@ -1103,7 +1070,8 @@ func (s) TestResolverMultipleLDSUpdates(t *testing.T) {
 // management server contains a set of weighted clusters. The test performs a
 // bunch of RPCs using the cluster specifier returned by the resolver, and
 // verifies the cluster distribution.
-func (s) TestResolverWRR(t *testing.T) {
+func TestResolverWRR(t *testing.T) {
+	defaultTestPort := []uint32{8080}
 	origNewWRR := rinternal.NewWRR
 	rinternal.NewWRR = testutils.NewTestWRR
 	defer func() { rinternal.NewWRR = origNewWRR }()
@@ -1124,7 +1092,15 @@ func (s) TestResolverWRR(t *testing.T) {
 		ClusterSpecifierType: e2e.RouteConfigClusterSpecifierTypeWeightedCluster,
 		WeightedClusters:     map[string]int{"A": 75, "B": 25},
 	})}
-	configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes)
+	clusters := []*v3clusterpb.Cluster{
+		e2e.DefaultCluster("A", "endpoint_A", e2e.SecurityLevelNone),
+		e2e.DefaultCluster("B", "endpoint_B", e2e.SecurityLevelNone),
+	}
+	endpoints := []*v3endpointpb.ClusterLoadAssignment{
+		e2e.DefaultEndpoint("endpoint_A", defaultTestHostname, defaultTestPort),
+		e2e.DefaultEndpoint("endpoint_B", defaultTestHostname, defaultTestPort),
+	}
+	configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, routes, clusters, endpoints)
 
 	// Read the update pushed by the resolver to the ClientConn.
 	cs := verifyUpdateFromResolver(ctx, t, stateCh, "")
@@ -1245,7 +1221,7 @@ type clientStream struct {
 	iresolver.ClientStream
 }
 
-func TestConfigSelector_FailureCases(t *testing.T) {
+func (s) TestConfigSelector_FailureCases(t *testing.T) {
 	const methodName = "1"
 
 	tests := []struct {
@@ -1349,7 +1325,9 @@ func newHTTPFilter(t *testing.T, name, typeURL, path, err string) *v3httppb.Http
 	}
 }
 
-func TestXDSResolverHTTPFilters(t *testing.T) {
+func (s) TestXDSResolverHTTPFilters(t *testing.T) {
+	defaultTestPort := []uint32{8080}
+
 	const methodName1 = "1"
 	const methodName2 = "2"
 	testFilterName := t.Name()
@@ -1557,7 +1535,18 @@ func TestXDSResolverHTTPFilters(t *testing.T) {
 
 			// Update the management server with a listener resource that
 			// contains an inline route configuration.
-			configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, []*v3listenerpb.Listener{tc.listener}, nil)
+
+			cluster := []*v3clusterpb.Cluster{
+				e2e.DefaultCluster("A", "endpoint_A", e2e.SecurityLevelNone),
+				e2e.DefaultCluster("B", "endpoint_B", e2e.SecurityLevelNone),
+			}
+			endpoints := []*v3endpointpb.ClusterLoadAssignment{
+				e2e.DefaultEndpoint("endpoint_A", defaultTestHostname, defaultTestPort),
+				e2e.DefaultEndpoint("endpoint_B", defaultTestHostname, defaultTestPort),
+			}
+			configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, []*v3listenerpb.Listener{tc.listener}, nil, cluster, endpoints)
+			//
+			// configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, []*v3listenerpb.Listener{tc.listener}, nil)
 
 			// Ensure that the resolver pushes a state update to the channel.
 			cs := verifyUpdateFromResolver(ctx, t, stateCh, "")

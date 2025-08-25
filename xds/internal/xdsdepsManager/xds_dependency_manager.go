@@ -90,7 +90,26 @@ type XdsConfigOrError struct {
 	Error error
 }
 
-func (xdm *XdsDependencyManager) Build() {
+func Build(
+	Listenername string,
+	watcher Watcher,
+	xdsClient xdsclient.XDSClient,
+	dataplaneAuthority string,
+	serializer *grpcsync.CallbackSerializer,
+	serializerCancel context.CancelFunc) *XdsDependencyManager {
+	xdm := &XdsDependencyManager{
+		Listenername:       Listenername,
+		Watcher:            watcher,
+		DataplaneAuthority: dataplaneAuthority,
+		XdsClient:          xdsClient,
+		Serializer:         serializer,
+		SerializerCancel:   serializerCancel,
+		clusterWatchers:    make(map[string]*watcherState),
+		dnsWatcher:         make(map[string]*dnsWatcher),
+		edsWatchers:        make(map[string]*edsWatcherState),
+		Clusters:           make(map[string]xdsresource.ClusterConfigOrError),
+		ClusterSubs:        make(map[string]*ClusterRefs),
+	}
 	//listener watcher
 	// Initialize the Serializer used to synchronize the following:
 	// - updates from the xDS client. This could lead to generation of new
@@ -102,17 +121,18 @@ func (xdm *XdsDependencyManager) Build() {
 	// ctx, cancel := context.WithCancel(context.Background())
 	// xdm.Serializer = grpcsync.NewCallbackSerializer(ctx)
 	// xdm.SerializerCancel = cancel
-	xdm.clusterWatchers = make(map[string]*watcherState)
-	xdm.dnsWatcher = make(map[string]*dnsWatcher)
-	xdm.edsWatchers = make(map[string]*edsWatcherState)
+	// xdm.clusterWatchers = make(map[string]*watcherState)
+	// xdm.dnsWatcher = make(map[string]*dnsWatcher)
+	// xdm.edsWatchers = make(map[string]*edsWatcherState)
 	xdm.listenerWatcher = newListenerWatcher(xdm.Listenername, xdm) //pass xds dependency manager as parent)
-	xdm.Clusters = make(map[string]xdsresource.ClusterConfigOrError)
-	xdm.ClusterSubs = make(map[string]*ClusterRefs)
+	// xdm.Clusters = make(map[string]xdsresource.ClusterConfigOrError)
+	// xdm.ClusterSubs = make(map[string]*ClusterRefs)
 
 	//route watcher
 	//cds watcher
 	// eds watcher
 	// xdm.Watcher.OnUpdate(XdsConfigOrError{Error: nil})
+	return xdm
 
 }
 
@@ -308,13 +328,13 @@ func (xdm *XdsDependencyManager) populateCLutserConfig(clusterName string, depth
 		if depth > 0 {
 			*leafClusters = append(*leafClusters, name)
 		}
-		// if edsstate.update == nil {
-		// 	// Handle the case where the update hasn’t been received yet
-		// 	clusterConfigMap[name] = xdsresource.ClusterConfigOrError{
-		// 		Err: fmt.Errorf("EDS update for cluster %q not yet available", name),
-		// 	}
-		// 	return true, nil
-		// }
+		if edsstate.update == nil {
+			// Handle the case where the update hasn’t been received yet
+			// clusterConfigMap[name] = xdsresource.ClusterConfigOrError{
+			// 	Err: fmt.Errorf("EDS update for cluster %q not yet available", name),
+			// }
+			return false, nil
+		}
 		clusterConfigMap[clusterName] = xdsresource.ClusterConfigOrError{
 			Cluster_config: xdsresource.ClusterConfig{
 				Cluster: *cluster,
@@ -322,7 +342,7 @@ func (xdm *XdsDependencyManager) populateCLutserConfig(clusterName string, depth
 					Child_type: "endpoint",
 					Endpoint_config: xdsresource.EndpointConfig{
 						Endpoints: xdsresource.EndpointsResource{
-							EDSUpdate: *edsstate.update}}}},
+							EDSUpdate: *(edsstate.update)}}}},
 			Err: nil}
 
 	case xdsresource.ClusterTypeLogicalDNS:
