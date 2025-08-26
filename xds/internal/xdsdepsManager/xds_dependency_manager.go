@@ -667,11 +667,11 @@ func (xdm *XdsDependencyManager) Clustersubscription(name string) *ClusterRefs {
 }
 
 func (c *ClusterRefs) Unsubscribe() {
-	ref := &c.refCount
-	if *ref <= 1 {
+	ref := atomic.AddInt32(&c.refCount, -1)
+	if ref <= 0 {
 		delete(c.xdm.ClusterSubs, c.name)
 	}
-	atomic.AddInt32(ref, -1)
+
 	if _, ok := c.xdm.clustersFromRoute[c.name]; !ok {
 		c.xdm.sendUpdate()
 	}
