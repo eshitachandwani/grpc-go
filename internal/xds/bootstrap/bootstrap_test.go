@@ -383,12 +383,19 @@ func (s) TestGetConfiguration_Failure(t *testing.T) {
 	cancel := setupBootstrapOverride(bootstrapFileMap)
 	defer cancel()
 
-	for _, name := range []string{"nonExistentBootstrapFile", "empty", "badJSON", "noBalancerName", "emptyXdsServer"} {
+	for _, name := range []string{"nonExistentBootstrapFile", "badJSON", "noBalancerName", "emptyXdsServer"} {
 		t.Run(name, func(t *testing.T) {
 			testGetConfigurationWithFileNameEnv(t, name, true, nil)
 			testGetConfigurationWithFileContentEnv(t, name, true, nil)
 		})
 	}
+	const name = "empty"
+	t.Run(name, func(t *testing.T) {
+		testGetConfigurationWithFileNameEnv(t, name, true, nil)
+		// If both the env vars are empty, a nil config with a nil error must be
+		// returned.
+		testGetConfigurationWithFileContentEnv(t, name, false, nil)
+	})
 }
 
 // Tests the functionality in GetConfiguration with different bootstrap file
@@ -462,9 +469,9 @@ func (s) TestGetConfiguration_BootstrapEnvPriority(t *testing.T) {
 	envconfig.XDSBootstrapFileContent = ""
 	defer func() { envconfig.XDSBootstrapFileContent = origBootstrapContent }()
 
-	// When both env variables are empty, GetConfiguration should fail.
-	if _, err := GetConfiguration(); err == nil {
-		t.Errorf("GetConfiguration() returned nil error, expected to fail")
+	// When both env variables are empty, GetConfiguration should return nil.
+	if cfg, err := GetConfiguration(); err != nil || cfg != nil {
+		t.Errorf("GetConfiguration() returned (%v, %v), want (<nil>, <nil>)", cfg, err)
 	}
 
 	// When one of them is set, it should be used.
@@ -1193,79 +1200,4 @@ func (s) TestNode_ToProto(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Tests the case where the xDS fallback env var is set to false, and verifies
-// that only the first server from the list of server configurations is used.
-func (s) TestGetConfiguration_FallbackDisabled(t *testing.T) {
-	origFallbackEnv := envconfig.XDSFallbackSupport
-	envconfig.XDSFallbackSupport = false
-	defer func() { envconfig.XDSFallbackSupport = origFallbackEnv }()
-
-	cancel := setupBootstrapOverride(map[string]string{
-		"multipleXDSServers": `
-		{
-			"node": {
-				"id": "ENVOY_NODE_ID",
-				"metadata": {
-				    "TRAFFICDIRECTOR_GRPC_HOSTNAME": "trafficdirector"
-			    }
-			},
-			"xds_servers" : [
-				{
-					"server_uri": "trafficdirector.googleapis.com:443",
-					"channel_creds": [{ "type": "google_default" }],
-					"server_features": ["xds_v3"]
-				},
-				{
-					"server_uri": "backup.never.use.com:1234",
-					"channel_creds": [{ "type": "google_default" }]
-				}
-			],
-			"authorities": {
-				"xds.td.com": {
-					"xds_servers": [
-						{
-							"server_uri": "td.com",
-							"channel_creds": [ { "type": "google_default" } ],
-							"server_features" : ["xds_v3"]
-						},
-						{
-							"server_uri": "backup.never.use.com:1234",
-							"channel_creds": [{ "type": "google_default" }]
-						}
-					]
-				}
-			}
-		}`,
-	})
-	defer cancel()
-
-	wantConfig := &Config{
-		xDSServers: []*ServerConfig{{
-			serverURI:      "trafficdirector.googleapis.com:443",
-			channelCreds:   []ChannelCreds{{Type: "google_default"}},
-			serverFeatures: []string{"xds_v3"},
-			selectedCreds:  ChannelCreds{Type: "google_default"},
-		}},
-		node: v3Node,
-		clientDefaultListenerResourceNameTemplate: "%s",
-		authorities: map[string]*Authority{
-			"xds.td.com": {
-				ClientListenerResourceNameTemplate: "xdstp://xds.td.com/envoy.config.listener.v3.Listener/%s",
-				XDSServers: []*ServerConfig{{
-					serverURI:      "td.com",
-					channelCreds:   []ChannelCreds{{Type: "google_default"}},
-					serverFeatures: []string{"xds_v3"},
-					selectedCreds:  ChannelCreds{Type: "google_default"},
-				}},
-			},
-		},
-	}
-	t.Run("bootstrap_file_name", func(t *testing.T) {
-		testGetConfigurationWithFileNameEnv(t, "multipleXDSServers", false, wantConfig)
-	})
-	t.Run("bootstrap_file_contents", func(t *testing.T) {
-		testGetConfigurationWithFileContentEnv(t, "multipleXDSServers", false, wantConfig)
-	})
 }
