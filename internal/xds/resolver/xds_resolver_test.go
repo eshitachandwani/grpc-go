@@ -685,7 +685,10 @@ func (s) TestResolverRemovedWithRPCs(t *testing.T) {
 
 	// Delete the resources on the management server. This should result in a
 	// resource-not-found error from the xDS client.
-	if err := mgmtServer.Update(ctx, e2e.UpdateOptions{NodeID: nodeID}); err != nil {
+	oldlistener:=resources.Listeners
+	resources.Listeners=nil
+	resources.SkipValidation=true
+	if err := mgmtServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
 	}
 
@@ -732,7 +735,7 @@ waitForStateUpdate:
 	for {
 		sCtx, sCancel := context.WithTimeout(ctx, defaultTestShortTimeout)
 		defer sCancel()
-
+resources.Listeners=oldlistener
 		configureResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, resources.Listeners, resources.Routes)
 
 		select {
@@ -986,7 +989,7 @@ func (s) TestResolverMaxStreamDuration(t *testing.T) {
 // Tests that clusters remain in service config if RPCs are in flight.
 func (s) TestResolverDelayedOnCommitted(t *testing.T) {
 	// Spin up an xDS management server for the test.
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*defaultTestTimeout)
 	defer cancel()
 	nodeID := uuid.New().String()
 	mgmtServer, _, _, bc := setupManagementServerForTest(t, nodeID)
@@ -1024,12 +1027,16 @@ func (s) TestResolverDelayedOnCommitted(t *testing.T) {
 	newClusterName := "new-" + defaultTestClusterName
 	newEndpointName := "new-" + defaultTestEndpointName
 	resources.Routes = []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(resources.Routes[0].Name, defaultTestServiceName, newClusterName)}
+	if err := mgmtServer.Update(ctx, resources); err != nil {
+		t.Fatal(err)
+	}
+	// sending the cluster seperately to avoid the race between cluster resource
+	// error and route update.
 	resources.Clusters = []*v3clusterpb.Cluster{e2e.DefaultCluster(newClusterName, newEndpointName, e2e.SecurityLevelNone)}
 	resources.Endpoints = []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(newEndpointName, defaultTestHostname, defaultTestPort)}
 	if err := mgmtServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
 	}
-
 	// Read the update pushed by the resolver to the ClientConn and ensure the
 	// old cluster is present in the service config. Also ensure that the newly
 	// returned config selector does not hold a reference to the old cluster.

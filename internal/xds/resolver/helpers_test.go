@@ -166,7 +166,7 @@ func verifyUpdateFromResolver(ctx context.Context, t *testing.T, stateCh chan re
 		}
 		wantSCParsed := internal.ParseServiceConfig.(func(string) *serviceconfig.ParseResult)(wantSC)
 		if !internal.EqualServiceConfigForTesting(state.ServiceConfig.Config, wantSCParsed.Config) {
-			t.Fatalf("Got service config:\n%s \nWant service config:\n%s", cmp.Diff(nil, state.ServiceConfig.Config), cmp.Diff(nil, wantSCParsed.Config))
+			t.Fatalf("Got service config:\n%v \nWant service config:\n%v", state.ServiceConfig.Config, wantSCParsed.Config)
 		}
 	}
 	cs := iresolver.GetConfigSelector(state)

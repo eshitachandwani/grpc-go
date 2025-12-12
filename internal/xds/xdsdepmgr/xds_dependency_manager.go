@@ -38,7 +38,7 @@ var logger = grpclog.Component("xds")
 
 // EnableCDSEDSlooksups is a flag used to control whether the CDS/EDS watchers in
 // the dependency manager should be used. It is made false by default.
-var EnableCDSEDSlooksups = false
+var EnableCDSEDSlooksups = true
 
 func prefixLogger(p *DependencyManager) *internalgrpclog.PrefixLogger {
 	return internalgrpclog.NewPrefixLogger(logger, fmt.Sprintf(prefix, p))
@@ -151,7 +151,7 @@ func (m *DependencyManager) Close() {
 	}
 
 	for name, dnsResolver := range m.dnsResolvers {
-		go dnsResolver.cancelResolver()
+		dnsResolver.cancelResolver()
 		delete(m.dnsResolvers, name)
 	}
 }
@@ -647,4 +647,10 @@ func (m *DependencyManager) onDNSError(resourceName string, err error) {
 	}
 	m.logger.Warningf("DNS resolver error %q: %v", resourceName, m.annotateErrorWithNodeID(err))
 	m.maybeSendUpdateLocked()
+}
+
+func (m *DependencyManager) ResolveNow(opt resolver.ResolveNowOptions) {
+	for _, res := range m.dnsResolvers {
+		res.resolver.ResolveNow(opt)
+	}
 }

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/internal/grpcsync"
 	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource"
 	"google.golang.org/grpc/resolver"
@@ -162,6 +163,7 @@ func newEndpointWatcher(resourceName string, depMgr *DependencyManager) *endpoin
 // dnsResolverState watches updates for the given DNS hostname. It implements
 // resolver.ClientConn interface to work with the DNS resolver.
 type dnsResolver struct {
+	balancer.ClientConn
 	target string
 	dnsR   resolver.Resolver
 	depMgr *DependencyManager
@@ -211,15 +213,13 @@ func newDNSResolver(target string, depMgr *DependencyManager) *dnsResolverState 
 	drState := &dnsResolverState{resolver: dr, cancelResolver: func() {}}
 	u, err := url.Parse("dns:///" + target)
 	if err != nil {
-		drState.updateReceived = true
-		drState.err = err
+		drState.resolver.ReportError(err)
 		drState.resolver.depMgr.logger.Warningf("Error while parsing DNS target %q: %v", target, drState.resolver.depMgr.annotateErrorWithNodeID(err))
 		return drState
 	}
 	r, err := resolver.Get("dns").Build(resolver.Target{URL: *u}, dr, resolver.BuildOptions{})
 	if err != nil {
-		drState.updateReceived = true
-		drState.err = err
+		drState.resolver.ReportError(err)
 		drState.resolver.depMgr.logger.Warningf("Error while building DNS resolver for target %q: %v", target, drState.resolver.depMgr.annotateErrorWithNodeID(err))
 		return drState
 	}
@@ -230,4 +230,16 @@ func newDNSResolver(target string, depMgr *DependencyManager) *dnsResolverState 
 		r.Close()
 	}
 	return drState
+}
+
+// type ccWrapper struct{
+// 	resolver.ClientConn
+// }
+
+// func(ccWrapper) ResolveNow{
+// 	dns
+// }
+
+func (dr *dnsResolver) ResolveNow(opts resolver.ResolveNowOptions) {
+	dr.dnsR.ResolveNow(opts)
 }

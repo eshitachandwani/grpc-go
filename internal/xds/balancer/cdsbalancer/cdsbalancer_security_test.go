@@ -561,7 +561,7 @@ func (s) TestSecurityConfigUpdate_GoodToBad(t *testing.T) {
 	// Register a wrapped clusterresolver LB policy (child policy of the cds LB
 	// policy) for the duration of this test that makes the resolver error
 	// pushed to it available to the test.
-	_, resolverErrCh, _, _ := registerWrappedClusterResolverPolicy(t)
+	_, resolverErrCh, _, _ := registerWrappedpriorityPolicy(t)
 
 	// Spin up an xDS management server.
 	mgmtServer := e2e.StartManagementServer(t, e2e.ManagementServerOptions{})

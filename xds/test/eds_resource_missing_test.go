@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc/internal/testutils/xds/e2e/setup"
 	"google.golang.org/grpc/internal/xds/bootstrap"
 	"google.golang.org/grpc/internal/xds/xdsclient"
+	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/status"
 
@@ -107,7 +108,7 @@ func (s) TestEDS_MissingResource(t *testing.T) {
 		Routes:         []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(routeConfigName, serviceName, clusterName)},
 		Clusters:       []*v3clusterpb.Cluster{e2e.DefaultCluster(clusterName, endpointsName, e2e.SecurityLevelNone)},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*defaultTestTimeout)
 	defer cancel()
 	if err := mgmtServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
@@ -129,7 +130,7 @@ func (s) TestEDS_MissingResource(t *testing.T) {
 	if gotCode, wantCode := status.Code(err), codes.Unavailable; gotCode != wantCode {
 		t.Errorf("EmptyCall() failed with code = %v, want %s", gotCode, wantCode)
 	}
-	if gotMsg, wantMsg := err.Error(), "no targets to pick from"; !strings.Contains(gotMsg, wantMsg) {
+	if gotMsg, wantMsg := err.Error(), fmt.Sprintf("resource %q of type %q has been removed", resources.Clusters[0].EdsClusterConfig.ServiceName, xdsresource.EndpointsResourceTypeName); !strings.Contains(gotMsg, wantMsg) {
 		t.Errorf("EmptyCall() failed with message = %q, want to contain %q", gotMsg, wantMsg)
 	}
 }

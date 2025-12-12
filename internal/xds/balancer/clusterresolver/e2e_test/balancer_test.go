@@ -24,6 +24,11 @@ import (
 	"testing"
 	"time"
 
+	v3clusterpb "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
+	v3endpointpb "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	v3listenerpb "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	v3routepb "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+	v3discoverypb "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -33,34 +38,30 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/internal"
-	"google.golang.org/grpc/internal/balancer/stub"
 	iserviceconfig "google.golang.org/grpc/internal/serviceconfig"
-	"google.golang.org/grpc/internal/stubserver"
-	"google.golang.org/grpc/internal/testutils"
-	"google.golang.org/grpc/internal/testutils/xds/e2e"
 	xdsinternal "google.golang.org/grpc/internal/xds"
-	"google.golang.org/grpc/internal/xds/balancer/clusterimpl"
-	"google.golang.org/grpc/internal/xds/balancer/outlierdetection"
-	"google.golang.org/grpc/internal/xds/balancer/priority"
-	"google.golang.org/grpc/internal/xds/balancer/wrrlocality"
-	"google.golang.org/grpc/internal/xds/bootstrap"
-	"google.golang.org/grpc/internal/xds/xdsclient"
-	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource/version"
+	testgrpc "google.golang.org/grpc/interop/grpc_testing"
+	testpb "google.golang.org/grpc/interop/grpc_testing"
 	"google.golang.org/grpc/resolver"
-	"google.golang.org/grpc/resolver/manual"
 	"google.golang.org/grpc/serviceconfig"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	v3clusterpb "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	v3corepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	v3endpointpb "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
-	v3discoverypb "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
-	testgrpc "google.golang.org/grpc/interop/grpc_testing"
-	testpb "google.golang.org/grpc/interop/grpc_testing"
 
+	"google.golang.org/grpc/internal/balancer/stub"
+	"google.golang.org/grpc/internal/stubserver"
+	"google.golang.org/grpc/internal/testutils"
+	"google.golang.org/grpc/internal/testutils/xds/e2e"
 	_ "google.golang.org/grpc/internal/xds/balancer/cdsbalancer" // Register the "cds_experimental" LB policy.
+	"google.golang.org/grpc/internal/xds/balancer/clusterimpl"
+	"google.golang.org/grpc/internal/xds/balancer/outlierdetection"
+	"google.golang.org/grpc/internal/xds/balancer/priority"
+	"google.golang.org/grpc/internal/xds/balancer/wrrlocality"
+	_ "google.golang.org/grpc/internal/xds/httpfilter/router" // Register the router filter
+	_ "google.golang.org/grpc/internal/xds/resolver"          // Register the xds resolver
+	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource/version"
 )
 
 // setupAndDial performs common setup across all tests
@@ -73,43 +74,23 @@ import (
 // Returns a function to close the ClientConn and the xDS client.
 func setupAndDial(t *testing.T, bootstrapContents []byte) (*grpc.ClientConn, func()) {
 	t.Helper()
-
-	// Create an xDS client for use by the cluster_resolver LB policy.
-	config, err := bootstrap.NewConfigFromContents(bootstrapContents)
-	if err != nil {
-		t.Fatalf("Failed to parse bootstrap contents: %s, %v", string(bootstrapContents), err)
+	// Create an xDS resolver with the above bootstrap configuration.
+	if internal.NewXDSResolverWithConfigForTesting == nil {
+		t.Fatalf("internal.NewXDSResolverWithConfigForTesting is nil")
 	}
-	pool := xdsclient.NewPool(config)
-	xdsC, xdsClose, err := pool.NewClientForTesting(xdsclient.OptionsForTesting{
-		Name: t.Name(),
-	})
+	r, err := internal.NewXDSResolverWithConfigForTesting.(func([]byte) (resolver.Builder, error))(bootstrapContents)
 	if err != nil {
-		t.Fatalf("Failed to create xDS client: %v", err)
+		t.Fatalf("eshita resolver creation failed")
 	}
-
-	// Create a manual resolver and push a service config specifying the use of
-	// the cds LB policy as the top-level LB policy, and a corresponding config
-	// with a single cluster.
-	r := manual.NewBuilderWithScheme("whatever")
-	jsonSC := fmt.Sprintf(`{
-			"loadBalancingConfig":[{
-				"cds_experimental":{
-					"cluster": "%s"
-				}
-			}]
-		}`, clusterName)
-	scpr := internal.ParseServiceConfig.(func(string) *serviceconfig.ParseResult)(jsonSC)
-	r.InitialState(xdsclient.SetClient(resolver.State{ServiceConfig: scpr}, xdsC))
-
 	// Create a ClientConn and make a successful RPC.
-	cc, err := grpc.NewClient(r.Scheme()+":///test.service", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithResolvers(r))
+	cc, err := grpc.NewClient("xds:///"+serviceName, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithResolvers(r))
 	if err != nil {
-		xdsClose()
+		// xdsClose()
 		t.Fatalf("grpc.NewClient() failed: %v", err)
 	}
 	cc.Connect()
 	return cc, func() {
-		xdsClose()
+		// xdsClose()
 		cc.Close()
 	}
 }
@@ -151,6 +132,8 @@ func (s) TestErrorFromParentLB_ConnectionError(t *testing.T) {
 	// Configure cluster and endpoints resources in the management server.
 	resources := e2e.UpdateOptions{
 		NodeID:         nodeID,
+		Listeners:      []*v3listenerpb.Listener{e2e.DefaultClientListener(serviceName, routeName)},
+		Routes:         []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(routeName, serviceName, clusterName)},
 		Clusters:       []*v3clusterpb.Cluster{e2e.DefaultCluster(clusterName, edsServiceName, e2e.SecurityLevelNone)},
 		Endpoints:      []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(edsServiceName, "localhost", []uint32{testutils.ParsePort(t, server.Address)})},
 		SkipValidation: true,
@@ -237,6 +220,8 @@ func (s) TestErrorFromParentLB_ResourceNotFound(t *testing.T) {
 	// Configure cluster and endpoints resources in the management server.
 	resources := e2e.UpdateOptions{
 		NodeID:         nodeID,
+		Listeners:      []*v3listenerpb.Listener{e2e.DefaultClientListener(serviceName, routeName)},
+		Routes:         []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(routeName, serviceName, clusterName)},
 		Clusters:       []*v3clusterpb.Cluster{e2e.DefaultCluster(clusterName, edsServiceName, e2e.SecurityLevelNone)},
 		Endpoints:      []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(edsServiceName, "localhost", []uint32{testutils.ParsePort(t, server.Address)})},
 		SkipValidation: true,
@@ -300,6 +285,8 @@ func (s) TestErrorFromParentLB_ResourceNotFound(t *testing.T) {
 	// Configure cluster and endpoints resources in the management server.
 	resources = e2e.UpdateOptions{
 		NodeID:         nodeID,
+		Listeners:      []*v3listenerpb.Listener{e2e.DefaultClientListener(serviceName, routeName)},
+		Routes:         []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(routeName, serviceName, clusterName)},
 		Clusters:       []*v3clusterpb.Cluster{e2e.DefaultCluster(clusterName, edsServiceName, e2e.SecurityLevelNone)},
 		Endpoints:      []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(edsServiceName, "localhost", []uint32{testutils.ParsePort(t, server.Address)})},
 		SkipValidation: true,
@@ -383,6 +370,8 @@ func (s) TestOutlierDetectionConfigPropagationToChildPolicy(t *testing.T) {
 	}
 	resources := e2e.UpdateOptions{
 		NodeID:         nodeID,
+		Listeners:      []*v3listenerpb.Listener{e2e.DefaultClientListener(serviceName, routeName)},
+		Routes:         []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(routeName, serviceName, clusterName)},
 		Clusters:       []*v3clusterpb.Cluster{cluster},
 		Endpoints:      []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(edsServiceName, "localhost", []uint32{testutils.ParsePort(t, server.Address)})},
 		SkipValidation: true,

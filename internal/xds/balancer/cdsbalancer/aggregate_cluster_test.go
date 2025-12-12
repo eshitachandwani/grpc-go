@@ -25,14 +25,21 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/balancer/pickfirst"
+	"google.golang.org/grpc/balancer/roundrobin"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/internal/pretty"
+	iserviceconfig "google.golang.org/grpc/internal/serviceconfig"
 	"google.golang.org/grpc/internal/stubserver"
 	"google.golang.org/grpc/internal/testutils"
 	"google.golang.org/grpc/internal/testutils/xds/e2e"
 	xdsinternal "google.golang.org/grpc/internal/xds"
+	"google.golang.org/grpc/internal/xds/balancer/clusterimpl"
 	"google.golang.org/grpc/internal/xds/balancer/clusterresolver"
+	"google.golang.org/grpc/internal/xds/balancer/outlierdetection"
+	"google.golang.org/grpc/internal/xds/balancer/priority"
+	"google.golang.org/grpc/internal/xds/balancer/wrrlocality"
 	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource/version"
 	"google.golang.org/grpc/serviceconfig"
 	"google.golang.org/grpc/status"
@@ -75,7 +82,7 @@ func makeLogicalDNSClusterResource(name, dnsHost string, dnsPort uint32) *v3clus
 // cluster resource. The test verifies that the load balancing configuration
 // pushed to the cluster_resolver LB policy contains the expected discovery
 // mechanism corresponding to the leaf cluster, on both occasions.
-func (s) TestAggregateClusterSuccess_LeafNode(t *testing.T) {
+func TestAggregateClusterSuccess_LeafNode(t *testing.T) {
 	tests := []struct {
 		name                  string
 		firstClusterResource  *v3clusterpb.Cluster
@@ -87,57 +94,141 @@ func (s) TestAggregateClusterSuccess_LeafNode(t *testing.T) {
 			name:                  "eds",
 			firstClusterResource:  e2e.DefaultCluster(clusterName, serviceName, e2e.SecurityLevelNone),
 			secondClusterResource: e2e.DefaultCluster(clusterName, serviceName+"-new", e2e.SecurityLevelNone),
-			wantFirstChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
-					Cluster:          clusterName,
-					Type:             clusterresolver.DiscoveryMechanismTypeEDS,
-					EDSServiceName:   serviceName,
-					OutlierDetection: json.RawMessage(`{}`),
-					TelemetryLabels:  xdsinternal.UnknownCSMLabels,
-				}},
-				XDSLBPolicy: json.RawMessage(`[{"xds_wrr_locality_experimental": {"childPolicy": [{"round_robin": {}}]}}]`),
+			wantFirstChildCfg: &priority.LBConfig{
+				Children: map[string]*priority.Child{
+					"priority-0-0": {
+						Config: &iserviceconfig.BalancerConfig{
+							Name: outlierdetection.Name,
+							Config: &outlierdetection.LBConfig{
+								Interval:           iserviceconfig.Duration(10 * time.Second), // default interval
+								BaseEjectionTime:   iserviceconfig.Duration(30 * time.Second),
+								MaxEjectionTime:    iserviceconfig.Duration(300 * time.Second),
+								MaxEjectionPercent: 10,
+								ChildPolicy: &iserviceconfig.BalancerConfig{
+									Name: clusterimpl.Name,
+									Config: &clusterimpl.LBConfig{
+										Cluster:         clusterName,
+										EDSServiceName:  serviceName,
+										TelemetryLabels: xdsinternal.UnknownCSMLabels,
+										ChildPolicy: &iserviceconfig.BalancerConfig{
+											Name: wrrlocality.Name,
+											Config: &wrrlocality.LBConfig{
+												ChildPolicy: &iserviceconfig.BalancerConfig{
+													Name: roundrobin.Name,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+						IgnoreReresolutionRequests: true,
+					},
+				},
+				Priorities: []string{"priority-0-0"},
 			},
-			wantSecondChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
-					Cluster:          clusterName,
-					Type:             clusterresolver.DiscoveryMechanismTypeEDS,
-					EDSServiceName:   serviceName + "-new",
-					OutlierDetection: json.RawMessage(`{}`),
-					TelemetryLabels:  xdsinternal.UnknownCSMLabels,
-				}},
-				XDSLBPolicy: json.RawMessage(`[{"xds_wrr_locality_experimental": {"childPolicy": [{"round_robin": {}}]}}]`),
+			wantSecondChildCfg: &priority.LBConfig{
+				Children: map[string]*priority.Child{
+					"priority-0-0": {
+						Config: &iserviceconfig.BalancerConfig{
+							Name: outlierdetection.Name,
+							Config: &outlierdetection.LBConfig{
+								Interval:           iserviceconfig.Duration(10 * time.Second), // default interval
+								BaseEjectionTime:   iserviceconfig.Duration(30 * time.Second),
+								MaxEjectionTime:    iserviceconfig.Duration(300 * time.Second),
+								MaxEjectionPercent: 10,
+								ChildPolicy: &iserviceconfig.BalancerConfig{
+									Name: clusterimpl.Name,
+									Config: &clusterimpl.LBConfig{
+										Cluster:         clusterName,
+										EDSServiceName:  serviceName,
+										TelemetryLabels: xdsinternal.UnknownCSMLabels,
+										ChildPolicy: &iserviceconfig.BalancerConfig{
+											Name: wrrlocality.Name,
+											Config: &wrrlocality.LBConfig{
+												ChildPolicy: &iserviceconfig.BalancerConfig{
+													Name: roundrobin.Name,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+						IgnoreReresolutionRequests: true,
+					},
+				},
+				Priorities: []string{"priority-0-0"},
 			},
 		},
 		{
 			name:                  "dns",
 			firstClusterResource:  makeLogicalDNSClusterResource(clusterName, "dns_host", uint32(port)),
 			secondClusterResource: makeLogicalDNSClusterResource(clusterName, "dns_host_new", uint32(port)),
-			wantFirstChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
-					Cluster:          clusterName,
-					Type:             clusterresolver.DiscoveryMechanismTypeLogicalDNS,
-					DNSHostname:      fmt.Sprintf("dns_host:%d", port),
-					OutlierDetection: json.RawMessage(`{}`),
-					TelemetryLabels:  xdsinternal.UnknownCSMLabels,
-				}},
-				XDSLBPolicy: json.RawMessage(`[{"xds_wrr_locality_experimental": {"childPolicy": [{"round_robin": {}}]}}]`),
+			wantFirstChildCfg: &priority.LBConfig{
+				Children: map[string]*priority.Child{
+					"priority-0": {
+						Config: &iserviceconfig.BalancerConfig{
+							Name: outlierdetection.Name,
+							Config: &outlierdetection.LBConfig{
+								Interval:           iserviceconfig.Duration(10 * time.Second), // default interval
+								BaseEjectionTime:   iserviceconfig.Duration(30 * time.Second),
+								MaxEjectionTime:    iserviceconfig.Duration(300 * time.Second),
+								MaxEjectionPercent: 10,
+								ChildPolicy: &iserviceconfig.BalancerConfig{
+									Name: clusterimpl.Name,
+									Config: &clusterimpl.LBConfig{
+										Cluster:         clusterName,
+										TelemetryLabels: xdsinternal.UnknownCSMLabels,
+										ChildPolicy: &iserviceconfig.BalancerConfig{
+											Name: pickfirst.Name,
+											Config: pickfirst.PfConfig{
+												ShuffleAddressList: false,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				Priorities: []string{"priority-0"},
 			},
-			wantSecondChildCfg: &clusterresolver.LBConfig{
-				DiscoveryMechanisms: []clusterresolver.DiscoveryMechanism{{
-					Cluster:          clusterName,
-					Type:             clusterresolver.DiscoveryMechanismTypeLogicalDNS,
-					DNSHostname:      fmt.Sprintf("dns_host_new:%d", port),
-					OutlierDetection: json.RawMessage(`{}`),
-					TelemetryLabels:  xdsinternal.UnknownCSMLabels,
-				}},
-				XDSLBPolicy: json.RawMessage(`[{"xds_wrr_locality_experimental": {"childPolicy": [{"round_robin": {}}]}}]`),
+			wantSecondChildCfg: &priority.LBConfig{
+				Children: map[string]*priority.Child{
+					"priority-0": {
+						Config: &iserviceconfig.BalancerConfig{
+							Name: outlierdetection.Name,
+							Config: &outlierdetection.LBConfig{
+								Interval:           iserviceconfig.Duration(10 * time.Second), // default interval
+								BaseEjectionTime:   iserviceconfig.Duration(30 * time.Second),
+								MaxEjectionTime:    iserviceconfig.Duration(300 * time.Second),
+								MaxEjectionPercent: 10,
+								ChildPolicy: &iserviceconfig.BalancerConfig{
+									Name: clusterimpl.Name,
+									Config: &clusterimpl.LBConfig{
+										Cluster:         clusterName,
+										TelemetryLabels: xdsinternal.UnknownCSMLabels,
+										ChildPolicy: &iserviceconfig.BalancerConfig{
+											Name: pickfirst.Name,
+											Config: pickfirst.PfConfig{
+												ShuffleAddressList: false,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				Priorities: []string{"priority-0"},
 			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			lbCfgCh, _, _, _ := registerWrappedClusterResolverPolicy(t)
+			lbCfgCh, _, _, _ := registerWrappedpriorityPolicy(t)
 			mgmtServer, nodeID, _ := setupWithManagementServer(t, nil, nil)
 
 			// Push the first cluster resource through the management server and
@@ -184,7 +275,7 @@ func (s) TestAggregateClusterSuccess_LeafNode(t *testing.T) {
 // the load balancing configuration pushed to the cluster_resolver LB policy
 // contains the expected discovery mechanisms.
 func (s) TestAggregateClusterSuccess_ThenUpdateChildClusters(t *testing.T) {
-	lbCfgCh, _, _, _ := registerWrappedClusterResolverPolicy(t)
+	lbCfgCh, _, _, _ := registerWrappedpriorityPolicy(t)
 	mgmtServer, nodeID, _ := setupWithManagementServer(t, nil, nil)
 
 	// Configure the management server with the aggregate cluster resource
@@ -295,7 +386,7 @@ func (s) TestAggregateClusterSuccess_ThenUpdateChildClusters(t *testing.T) {
 // verifies the load balancing configuration pushed to the cluster_resolver LB
 // policy contains a single discovery mechanism.
 func (s) TestAggregateClusterSuccess_ThenChangeRootToEDS(t *testing.T) {
-	lbCfgCh, _, _, _ := registerWrappedClusterResolverPolicy(t)
+	lbCfgCh, _, _, _ := registerWrappedpriorityPolicy(t)
 	mgmtServer, nodeID, _ := setupWithManagementServer(t, nil, nil)
 
 	// Configure the management server with the aggregate cluster resource
@@ -374,7 +465,7 @@ func (s) TestAggregateClusterSuccess_ThenChangeRootToEDS(t *testing.T) {
 // configuration pushed to the cluster_resolver LB policy contains the expected
 // discovery mechanisms.
 func (s) TestAggregatedClusterSuccess_SwitchBetweenLeafAndAggregate(t *testing.T) {
-	lbCfgCh, _, _, _ := registerWrappedClusterResolverPolicy(t)
+	lbCfgCh, _, _, _ := registerWrappedpriorityPolicy(t)
 	mgmtServer, nodeID, _ := setupWithManagementServer(t, nil, nil)
 
 	// Start off with the requested cluster being a leaf EDS cluster.
@@ -566,7 +657,7 @@ func (s) TestAggregatedClusterFailure_ExceedsMaxStackDepth(t *testing.T) {
 // policy specifies cluster D only once. Also verifies that configuration is
 // pushed only after all child clusters are resolved.
 func (s) TestAggregatedClusterSuccess_DiamondDependency(t *testing.T) {
-	lbCfgCh, _, _, _ := registerWrappedClusterResolverPolicy(t)
+	lbCfgCh, _, _, _ := registerWrappedpriorityPolicy(t)
 	mgmtServer, nodeID, _ := setupWithManagementServer(t, nil, nil)
 
 	// Configure the management server with an aggregate cluster resource having
@@ -635,7 +726,7 @@ func (s) TestAggregatedClusterSuccess_DiamondDependency(t *testing.T) {
 // discovery mechanism for cluster D. Also verifies that the configuration is
 // pushed only after all child clusters are resolved.
 func (s) TestAggregatedClusterSuccess_IgnoreDups(t *testing.T) {
-	lbCfgCh, _, _, _ := registerWrappedClusterResolverPolicy(t)
+	lbCfgCh, _, _, _ := registerWrappedpriorityPolicy(t)
 	mgmtServer, nodeID, _ := setupWithManagementServer(t, nil, nil)
 
 	// Configure the management server with an aggregate cluster resource that
@@ -716,7 +807,7 @@ func (s) TestAggregatedClusterSuccess_IgnoreDups(t *testing.T) {
 // where B is a leaf EDS cluster. Verifies that configuration is pushed to the
 // child policy and that an RPC can be successfully made.
 func (s) TestAggregatedCluster_NodeChildOfItself(t *testing.T) {
-	lbCfgCh, _, _, _ := registerWrappedClusterResolverPolicy(t)
+	lbCfgCh, _, _, _ := registerWrappedpriorityPolicy(t)
 	mgmtServer, nodeID, cc := setupWithManagementServer(t, nil, nil)
 
 	const (
@@ -804,7 +895,7 @@ func (s) TestAggregatedCluster_NodeChildOfItself(t *testing.T) {
 // are expected to fail with code UNAVAILABLE and an error message specifying
 // that the aggregate cluster graph has no leaf clusters.
 func (s) TestAggregatedCluster_CycleWithNoLeafNode(t *testing.T) {
-	lbCfgCh, _, _, _ := registerWrappedClusterResolverPolicy(t)
+	lbCfgCh, _, _, _ := registerWrappedpriorityPolicy(t)
 	mgmtServer, nodeID, cc := setupWithManagementServer(t, nil, nil)
 
 	const (
@@ -854,7 +945,7 @@ func (s) TestAggregatedCluster_CycleWithNoLeafNode(t *testing.T) {
 // there is a leaf cluster in this graph , configuration should be pushed to the
 // child policy and RPCs should get routed to that leaf cluster.
 func (s) TestAggregatedCluster_CycleWithLeafNode(t *testing.T) {
-	lbCfgCh, _, _, _ := registerWrappedClusterResolverPolicy(t)
+	lbCfgCh, _, _, _ := registerWrappedpriorityPolicy(t)
 	mgmtServer, nodeID, cc := setupWithManagementServer(t, nil, nil)
 
 	// Start a test service backend.
