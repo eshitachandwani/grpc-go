@@ -23,154 +23,42 @@ import (
 	"fmt"
 	"net/url"
 
-	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/internal/grpcsync"
 	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
 )
 
-type listenerWatcher struct {
-	resourceName string
-	cancel       func()
-	depMgr       *DependencyManager
+// xdsResourceWatcher is a generic implementation of the xdsresource.Watcher
+// interface.
+type xdsResourceWatcher[T any] struct {
+	onUpdate       func(*T, func())
+	onError        func(error, func())
+	onAmbientError func(error, func())
 }
 
-func newListenerWatcher(resourceName string, depMgr *DependencyManager) *listenerWatcher {
-	lw := &listenerWatcher{resourceName: resourceName, depMgr: depMgr}
-	lw.cancel = xdsresource.WatchListener(depMgr.xdsClient, resourceName, lw)
-	return lw
+func (x *xdsResourceWatcher[T]) ResourceChanged(update *T, onDone func()) {
+	x.onUpdate(update, onDone)
 }
 
-func (l *listenerWatcher) ResourceChanged(update *xdsresource.ListenerUpdate, onDone func()) {
-	l.depMgr.onListenerResourceUpdate(update, onDone)
+func (x *xdsResourceWatcher[T]) ResourceError(err error, onDone func()) {
+	x.onError(err, onDone)
 }
 
-func (l *listenerWatcher) ResourceError(err error, onDone func()) {
-	l.depMgr.onListenerResourceError(err, onDone)
-}
-
-func (l *listenerWatcher) AmbientError(err error, onDone func()) {
-	l.depMgr.onListenerResourceAmbientError(err, onDone)
-}
-
-func (l *listenerWatcher) stop() {
-	l.cancel()
-	if l.depMgr.logger.V(2) {
-		l.depMgr.logger.Infof("Canceling watch on Listener resource %q", l.resourceName)
-	}
-}
-
-type routeConfigWatcher struct {
-	resourceName string
-	cancel       func()
-	depMgr       *DependencyManager
-}
-
-func newRouteConfigWatcher(resourceName string, depMgr *DependencyManager) *routeConfigWatcher {
-	rw := &routeConfigWatcher{resourceName: resourceName, depMgr: depMgr}
-	rw.cancel = xdsresource.WatchRouteConfig(depMgr.xdsClient, resourceName, rw)
-	return rw
-}
-
-func (r *routeConfigWatcher) ResourceChanged(u *xdsresource.RouteConfigUpdate, onDone func()) {
-	r.depMgr.onRouteConfigResourceUpdate(r.resourceName, u, onDone)
-}
-
-func (r *routeConfigWatcher) ResourceError(err error, onDone func()) {
-	r.depMgr.onRouteConfigResourceError(r.resourceName, err, onDone)
-}
-
-func (r *routeConfigWatcher) AmbientError(err error, onDone func()) {
-	r.depMgr.onRouteConfigResourceAmbientError(r.resourceName, err, onDone)
-}
-
-func (r *routeConfigWatcher) stop() {
-	r.cancel()
-	if r.depMgr.logger.V(2) {
-		r.depMgr.logger.Infof("Canceling watch on RouteConfiguration resource %q", r.resourceName)
-	}
-}
-
-type clusterWatcher struct {
-	name   string
-	depMgr *DependencyManager
-}
-
-func (e *clusterWatcher) ResourceChanged(u *xdsresource.ClusterUpdate, onDone func()) {
-	e.depMgr.onClusterResourceUpdate(e.name, u, onDone)
-}
-
-func (e *clusterWatcher) ResourceError(err error, onDone func()) {
-	e.depMgr.onClusterResourceError(e.name, err, onDone)
-}
-
-func (e *clusterWatcher) AmbientError(err error, onDone func()) {
-	e.depMgr.onClusterAmbientError(e.name, err, onDone)
-}
-
-// clusterWatcherState groups the state associated with a clusterWatcher.
-type clusterWatcherState struct {
-	watcher     *clusterWatcher // The underlying watcher.
-	cancelWatch func()          // Cancel func to cancel the watch.
-	// Most recent update received for this cluster.
-	lastUpdate *xdsresource.ClusterUpdate
-	err        error
-}
-
-func newClusterWatcher(resourceName string, depMgr *DependencyManager) *clusterWatcherState {
-	w := &clusterWatcher{name: resourceName, depMgr: depMgr}
-	return &clusterWatcherState{
-		watcher:     w,
-		cancelWatch: xdsresource.WatchCluster(depMgr.xdsClient, resourceName, w),
-	}
-}
-
-type endpointWatcher struct {
-	name   string
-	depMgr *DependencyManager
-}
-
-func (e *endpointWatcher) ResourceChanged(u *xdsresource.EndpointsUpdate, onDone func()) {
-	e.depMgr.onEndpointUpdate(e.name, u, onDone)
-}
-
-func (e *endpointWatcher) ResourceError(err error, onDone func()) {
-	e.depMgr.onEndpointResourceError(e.name, err, onDone)
-}
-
-func (e *endpointWatcher) AmbientError(err error, onDone func()) {
-	e.depMgr.onEndpointAmbientError(e.name, err, onDone)
-}
-
-// endpointWatcherState groups the state associated with a endpointWatcher.
-type endpointWatcherState struct {
-	watcher     *endpointWatcher // The underlying watcher.
-	cancelWatch func()           // Cancel func to cancel the watch.
-	// Most recent update received for this cluster.
-	lastUpdate *xdsresource.EndpointsUpdate
-	err        error
-}
-
-func newEndpointWatcher(resourceName string, depMgr *DependencyManager) *endpointWatcherState {
-	w := &endpointWatcher{name: resourceName, depMgr: depMgr}
-	return &endpointWatcherState{
-		watcher:     w,
-		cancelWatch: xdsresource.WatchEndpoints(depMgr.xdsClient, resourceName, w),
-	}
+func (x *xdsResourceWatcher[T]) AmbientError(err error, onDone func()) {
+	x.onAmbientError(err, onDone)
 }
 
 // dnsResolverState watches updates for the given DNS hostname. It implements
 // resolver.ClientConn interface to work with the DNS resolver.
 type dnsResolver struct {
-	balancer.ClientConn
 	target string
 	dnsR   resolver.Resolver
 	depMgr *DependencyManager
 
-	//serializer is used to make sure that any methods on the resolver can be
-	//called from inside th Build function which is a garuntee that
-	//implementations of resolver.Clientconn need to maintain.
+	// serializer is used to make sure that any methods on the resolver can be
+	// called from inside th Build function which is a guarantee that
+	// implementations of resolver.Clientconn need to maintain.
 	serializer       grpcsync.CallbackSerializer
 	serializerCancel func()
 }
@@ -210,7 +98,11 @@ func (dr *dnsResolver) ParseServiceConfig(string) *serviceconfig.ParseResult {
 func newDNSResolver(target string, depMgr *DependencyManager) *dnsResolverState {
 	ctx, cancel := context.WithCancel(context.Background())
 	dr := &dnsResolver{target: target, depMgr: depMgr, serializer: *grpcsync.NewCallbackSerializer(ctx), serializerCancel: cancel}
-	drState := &dnsResolverState{resolver: dr, cancelResolver: func() {}}
+	drState := &dnsResolverState{resolver: dr}
+	drState.cancelResolver = func() {
+		drState.resolver.serializerCancel()
+		<-drState.resolver.serializer.Done()
+	}
 	u, err := url.Parse("dns:///" + target)
 	if err != nil {
 		drState.resolver.ReportError(err)
@@ -230,16 +122,4 @@ func newDNSResolver(target string, depMgr *DependencyManager) *dnsResolverState 
 		r.Close()
 	}
 	return drState
-}
-
-// type ccWrapper struct{
-// 	resolver.ClientConn
-// }
-
-// func(ccWrapper) ResolveNow{
-// 	dns
-// }
-
-func (dr *dnsResolver) ResolveNow(opts resolver.ResolveNowOptions) {
-	dr.dnsR.ResolveNow(opts)
 }

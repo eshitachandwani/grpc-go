@@ -162,8 +162,7 @@ func (s) TestAggregateCluster_WithTwoEDSClusters(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -258,8 +257,7 @@ func (s) TestAggregateCluster_WithTwoEDSClusters_PrioritiesChange(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -348,8 +346,7 @@ func (s) TestAggregateCluster_WithOneDNSCluster(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -395,8 +392,7 @@ func (s) TestAggregateCluster_WithOneDNSCluster_ParseFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -446,8 +442,7 @@ func (s) TestAggregateCluster_WithOneDNSCluster_HostnameChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -559,8 +554,7 @@ func (s) TestAggregateCluster_WithEDSAndDNS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -652,8 +646,7 @@ func (s) TestAggregateCluster_SwitchEDSAndDNS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -742,8 +735,7 @@ func (s) TestAggregateCluster_BadEDS_GoodToBadDNS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -854,8 +846,7 @@ func (s) TestAggregateCluster_BadEDSFromError_GoodToBadDNS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -909,8 +900,7 @@ func (s) TestAggregateCluster_BadDNS_GoodEDS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -984,8 +974,7 @@ func (s) TestAggregateCluster_BadEDS_BadDNS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -1068,8 +1057,7 @@ func (s) TestAggregateCluster_NoFallback_EDSNackedWithPreviousGoodUpdate(t *test
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -1155,8 +1143,7 @@ func (s) TestAggregateCluster_Fallback_EDSNackedWithoutPreviousGoodUpdate(t *tes
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -1206,7 +1193,7 @@ func (s) TestAggregateCluster_Fallback_EDS_ResourceNotFound(t *testing.T) {
 		},
 		SkipValidation: true,
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 50*defaultTestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
 	defer cancel()
 	if err := managementServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
@@ -1219,6 +1206,8 @@ func (s) TestAggregateCluster_Fallback_EDS_ResourceNotFound(t *testing.T) {
 		t.Fatalf("Failed to parse bootstrap contents: %s, %v", string(bootstrapContents), err)
 	}
 	pool := xdsclient.NewPool(config)
+	// Create new xdsCLient with WatchExpiryTimeout set to make sure we get the
+	// endpoint error within time.
 	xdsClient, close, err := pool.NewClientForTesting(xdsclient.OptionsForTesting{
 		Name:               t.Name(),
 		WatchExpiryTimeout: defaultTestWatchExpiryTimeout,
@@ -1228,26 +1217,6 @@ func (s) TestAggregateCluster_Fallback_EDS_ResourceNotFound(t *testing.T) {
 	}
 	defer close()
 
-	// Create a manual resolver and push a service config specifying the use of
-	// the cds LB policy as the top-level LB policy, and a corresponding config
-	// with a single cluster.
-	// r := manual.NewBuilderWithScheme("whatever")
-	// jsonSC := fmt.Sprintf(`{
-	// 		"loadBalancingConfig":[{
-	// 			"cds_experimental":{
-	// 				"cluster": "%s"
-	// 			}
-	// 		}]
-	// 	}`, clusterName)
-	// scpr := internal.ParseServiceConfig.(func(string) *serviceconfig.ParseResult)(jsonSC)
-	// r.InitialState(xdsclient.SetClient(resolver.State{ServiceConfig: scpr}, xdsClient))
-
-	// // Create a ClientConn.
-	// cc, err := grpc.NewClient(r.Scheme()+":///test.service", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithResolvers(r))
-	// if err != nil {
-	// 	t.Fatalf("failed to create new client for local test server: %v", err)
-	// }
-	// defer cc.Close()
 	if internal.NewXDSResolverWithClientForTesting == nil {
 		t.Fatalf("internal.NewXDSResolverWithClientForTesting is nil")
 	}
@@ -1257,7 +1226,6 @@ func (s) TestAggregateCluster_Fallback_EDS_ResourceNotFound(t *testing.T) {
 	}
 	cc, err := grpc.NewClient("xds:///"+serviceName, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithResolvers(r))
 	if err != nil {
-		// xdsClose()
 		t.Fatalf("grpc.NewClient() failed: %v", err)
 	}
 	cc.Connect()

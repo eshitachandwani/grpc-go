@@ -41,6 +41,7 @@ import (
 	"google.golang.org/grpc/internal/xds/balancer/priority"
 	"google.golang.org/grpc/internal/xds/xdsclient"
 	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource"
+	"google.golang.org/grpc/internal/xds/xdsdepmgr"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
 )
@@ -181,6 +182,7 @@ type cdsBalancer struct {
 	attrsWithClient  *attributes.Attributes       // Attributes with xdsClient attached to be passed to the child policies.
 
 	clusterConfig map[string]*xdsresource.ClusterResult
+	clusterSubs   *xdsdepmgr.ClusterRefs
 	// watchers         map[string]*watcherState     // Set of watchers and associated state, keyed by cluster name.
 	lbCfg       *lbConfig // Current load balancing configuration.
 	xdsLBPolicy internalserviceconfig.BalancerConfig
@@ -391,7 +393,20 @@ func (b *cdsBalancer) UpdateClientConnState(state balancer.ClientConnState) erro
 	// Handle the update in a blocking fashion.
 	errCh := make(chan error, 1)
 	callback := func(context.Context) {
+		if b.lbCfg.IsDynamic && b.clusterSubs == nil {
+			xdsdepmngr := xdsdepmgr.DependencyManagerFromResolverState(state.ResolverState)
+			if xdsdepmngr == nil {
+				panic("No dependency manager passed")
+			}
+			b.clusterSubs = xdsdepmngr.Clustersubscription(lbCfg.ClusterName)
+			return
+		}
 		if _, ok := b.clusterConfig[b.lbCfg.ClusterName]; !ok {
+			// if dynamic , could be that we just subscribed and have not yet received it in update.
+			if b.lbCfg.IsDynamic {
+				errCh <- nil
+				return
+			}
 			b.onClusterResourceError(lbCfg.ClusterName, b.annotateErrorWithNodeID(fmt.Errorf("did not find the static cluster in xdsConfig")))
 			errCh <- nil
 			return
@@ -488,6 +503,9 @@ func (b *cdsBalancer) Close() {
 		if b.cachedIdentity != nil {
 			b.cachedIdentity.Close()
 		}
+		if b.clusterSubs != nil {
+			b.clusterSubs.Unsubscribe()
+		}
 		b.logger.Infof("Shutdown")
 	})
 	b.serializerCancel()
@@ -533,7 +551,8 @@ func (b *cdsBalancer) onClusterUpdate() {
 	switch b.clusterConfig[b.lbCfg.ClusterName].Config.Cluster.ClusterType {
 	case xdsresource.ClusterTypeEDS:
 		if b.clusterConfig[b.lbCfg.ClusterName].Config.EndpointConfig == nil {
-			b.onClusterResourceError(b.lbCfg.ClusterName, b.clusterConfig[b.lbCfg.ClusterName].Config.EndpointConfig.ResolutionNote)
+			b.logger.Errorf("DEBUG: onClusterUpdate EDSUpdate is NIL")
+			b.onClusterResourceError(b.lbCfg.ClusterName, fmt.Errorf("no update received from EDS"))
 			return
 		}
 		dm := DiscoveryMechanism{
@@ -552,9 +571,11 @@ func (b *cdsBalancer) onClusterUpdate() {
 				mechanism:    dm,
 				childNameGen: newNameGenerator(b.childNameGeneratorSeqID),
 			}
+			b.childNameGeneratorSeqID++
 			if b.clusterConfig[b.lbCfg.ClusterName].Config.EndpointConfig.EDSUpdate != nil {
 				priority.edsResp = *b.clusterConfig[b.lbCfg.ClusterName].Config.EndpointConfig.EDSUpdate
 			}
+			b.prioritymap[dmkey] = priority
 		} else {
 			priority = b.prioritymap[dmkey]
 			priority.mechanism = dm
@@ -588,9 +609,11 @@ func (b *cdsBalancer) onClusterUpdate() {
 				// endpoints:    b.clusterConfig[b.lbCfg.ClusterName].Config.EndpointConfig.DNSEndpoints.Endpoints,
 				childNameGen: newNameGenerator(b.childNameGeneratorSeqID),
 			}
+			b.childNameGeneratorSeqID++
 			if b.clusterConfig[b.lbCfg.ClusterName].Config.EndpointConfig.DNSEndpoints != nil {
 				priority.endpoints = b.clusterConfig[b.lbCfg.ClusterName].Config.EndpointConfig.DNSEndpoints.Endpoints
 			}
+			b.prioritymap[dmkey] = priority
 		} else {
 			priority = b.prioritymap[dmkey]
 			priority.mechanism = dm
@@ -628,9 +651,11 @@ func (b *cdsBalancer) onClusterUpdate() {
 						// edsResp:      *b.clusterConfig[leafClusterName].Config.EndpointConfig.EDSUpdate,
 						childNameGen: newNameGenerator(b.childNameGeneratorSeqID),
 					}
+					b.childNameGeneratorSeqID++
 					if b.clusterConfig[leafClusterName].Config.EndpointConfig.EDSUpdate != nil {
 						priority.edsResp = *b.clusterConfig[leafClusterName].Config.EndpointConfig.EDSUpdate
 					}
+					b.prioritymap[dmkey] = priority
 				} else {
 					priority = b.prioritymap[dmkey]
 					priority.mechanism = dm
@@ -660,9 +685,11 @@ func (b *cdsBalancer) onClusterUpdate() {
 						// endpoints:    b.clusterConfig[leafClusterName].Config.EndpointConfig.DNSEndpoints.Endpoints,
 						childNameGen: newNameGenerator(b.childNameGeneratorSeqID),
 					}
+					b.childNameGeneratorSeqID++
 					if b.clusterConfig[leafClusterName].Config.EndpointConfig.DNSEndpoints != nil {
 						priority.endpoints = b.clusterConfig[leafClusterName].Config.EndpointConfig.DNSEndpoints.Endpoints
 					}
+					b.prioritymap[dmkey] = priority
 				} else {
 					priority = b.prioritymap[dmkey]
 					priority.mechanism = dm
@@ -680,7 +707,7 @@ func (b *cdsBalancer) onClusterUpdate() {
 		b.priorities = newPriorities
 	}
 
-	for i, _ := range b.priorities {
+	for i := range b.priorities {
 		odJSON := b.clusterConfig[b.priorities[i].mechanism.Cluster].Config.Cluster.OutlierDetection
 		// "In the cds LB policy, if the outlier_detection field is not set in
 		// the Cluster resource, a "no-op" outlier_detection config will be
@@ -722,7 +749,6 @@ func (b *cdsBalancer) onClusterUpdate() {
 			return
 		}
 		b.priorities[i].mechanism.outlierDetection = *odCfg
-		fmt.Printf("eshita outlier detection config : %v", *odCfg)
 	}
 	if err := json.Unmarshal(b.clusterConfig[b.lbCfg.ClusterName].Config.Cluster.LBPolicy, &b.xdsLBPolicy); err != nil {
 		// This indicates invalid JSON in the raw message, which needs to be handled.
@@ -752,7 +778,7 @@ func (b *cdsBalancer) onClusterAmbientError(name string, err error) {
 //
 // Only executed in the context of a serializer callback.
 func (b *cdsBalancer) onClusterResourceError(name string, err error) {
-	b.logger.Warningf("CDS watch for resource %q reported resource error", name)
+	b.logger.Warningf("CDS watch for resource %q reported resource error %v", name, err)
 	b.closeChildPolicyAndReportTF(err)
 }
 

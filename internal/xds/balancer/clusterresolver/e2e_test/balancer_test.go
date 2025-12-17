@@ -24,11 +24,6 @@ import (
 	"testing"
 	"time"
 
-	v3clusterpb "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
-	v3endpointpb "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
-	v3listenerpb "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
-	v3routepb "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
-	v3discoverypb "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -38,37 +33,41 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/internal"
+	"google.golang.org/grpc/internal/balancer/stub"
 	iserviceconfig "google.golang.org/grpc/internal/serviceconfig"
+	"google.golang.org/grpc/internal/stubserver"
+	"google.golang.org/grpc/internal/testutils"
+	"google.golang.org/grpc/internal/testutils/xds/e2e"
 	xdsinternal "google.golang.org/grpc/internal/xds"
-	testgrpc "google.golang.org/grpc/interop/grpc_testing"
-	testpb "google.golang.org/grpc/interop/grpc_testing"
+	"google.golang.org/grpc/internal/xds/balancer/clusterimpl"
+	"google.golang.org/grpc/internal/xds/balancer/outlierdetection"
+	"google.golang.org/grpc/internal/xds/balancer/priority"
+	"google.golang.org/grpc/internal/xds/balancer/wrrlocality"
+	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource/version"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	v3clusterpb "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	v3corepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	v3endpointpb "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	v3listenerpb "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	v3routepb "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+	v3discoverypb "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	testgrpc "google.golang.org/grpc/interop/grpc_testing"
+	testpb "google.golang.org/grpc/interop/grpc_testing"
 
-	"google.golang.org/grpc/internal/balancer/stub"
-	"google.golang.org/grpc/internal/stubserver"
-	"google.golang.org/grpc/internal/testutils"
-	"google.golang.org/grpc/internal/testutils/xds/e2e"
 	_ "google.golang.org/grpc/internal/xds/balancer/cdsbalancer" // Register the "cds_experimental" LB policy.
-	"google.golang.org/grpc/internal/xds/balancer/clusterimpl"
-	"google.golang.org/grpc/internal/xds/balancer/outlierdetection"
-	"google.golang.org/grpc/internal/xds/balancer/priority"
-	"google.golang.org/grpc/internal/xds/balancer/wrrlocality"
-	_ "google.golang.org/grpc/internal/xds/httpfilter/router" // Register the router filter
-	_ "google.golang.org/grpc/internal/xds/resolver"          // Register the xds resolver
-	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource/version"
+	_ "google.golang.org/grpc/internal/xds/httpfilter/router"    // Register the router filter
+	_ "google.golang.org/grpc/internal/xds/resolver"             // Register the xds resolver
 )
 
 // setupAndDial performs common setup across all tests
 //
 //   - creates an xDS client with the passed in bootstrap contents
-//   - creates a  manual resolver that configures `cds_experimental` as the
-//     top-level LB policy.
+//   - creates a  xds resolver to be used
 //   - creates a ClientConn to talk to the test backends
 //
 // Returns a function to close the ClientConn and the xDS client.
@@ -80,27 +79,25 @@ func setupAndDial(t *testing.T, bootstrapContents []byte) (*grpc.ClientConn, fun
 	}
 	r, err := internal.NewXDSResolverWithConfigForTesting.(func([]byte) (resolver.Builder, error))(bootstrapContents)
 	if err != nil {
-		t.Fatalf("eshita resolver creation failed")
+		t.Fatalf("xDS resolver creation failed")
 	}
 	// Create a ClientConn and make a successful RPC.
 	cc, err := grpc.NewClient("xds:///"+serviceName, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithResolvers(r))
 	if err != nil {
-		// xdsClose()
 		t.Fatalf("grpc.NewClient() failed: %v", err)
 	}
 	cc.Connect()
 	return cc, func() {
-		// xdsClose()
 		cc.Close()
 	}
 }
 
-// TestErrorFromParentLB_ConnectionError tests the case where the parent of the
-// clusterresolver LB policy sends it a connection error. The parent policy,
-// CDS LB policy, sends a connection error when the ADS stream to the management
-// server breaks. The test verifies that there is no perceivable effect because
-// of this connection error, and that RPCs continue to work (because the LB
-// policies are expected to use previously received xDS resources).
+// TestErrorFromParentLB_ConnectionError tests the case where a connection error
+// is received. The CDS LB policy sends a connection error when the ADS stream
+// to the management server breaks. The test verifies that there is no
+// perceivable effect because of this connection error, and that RPCs continue
+// to work (because the LB policies are expected to use previously received xDS
+// resources).
 func (s) TestErrorFromParentLB_ConnectionError(t *testing.T) {
 	// Create a listener to be used by the management server. The test will
 	// close this listener to simulate ADS stream breakage.
@@ -129,23 +126,19 @@ func (s) TestErrorFromParentLB_ConnectionError(t *testing.T) {
 	server := stubserver.StartTestService(t, nil)
 	defer server.Stop()
 
-	// Configure cluster and endpoints resources in the management server.
-	resources := e2e.UpdateOptions{
-		NodeID:         nodeID,
-		Listeners:      []*v3listenerpb.Listener{e2e.DefaultClientListener(serviceName, routeName)},
-		Routes:         []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(routeName, serviceName, clusterName)},
-		Clusters:       []*v3clusterpb.Cluster{e2e.DefaultCluster(clusterName, edsServiceName, e2e.SecurityLevelNone)},
-		Endpoints:      []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(edsServiceName, "localhost", []uint32{testutils.ParsePort(t, server.Address)})},
-		SkipValidation: true,
-	}
+	resources := e2e.DefaultClientResources(e2e.ResourceParams{
+		NodeID:     nodeID,
+		DialTarget: serviceName,
+		Host:       "localhost",
+		Port:       testutils.ParsePort(t, server.Address),
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
 	defer cancel()
 	if err := managementServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -170,13 +163,13 @@ func (s) TestErrorFromParentLB_ConnectionError(t *testing.T) {
 	}
 }
 
-// TestErrorFromParentLB_ResourceNotFound tests the case where the parent of the
-// clusterresolver LB policy sends it a resource-not-found error. The parent
-// policy, CDS LB policy, sends a resource-not-found error when the cluster
-// resource associated with these LB policies is removed by the management
-// server. The test verifies that the associated EDS is canceled and RPCs fail.
-// It also ensures that when the Cluster resource is added back, the EDS
-// resource is re-requested and RPCs being to succeed.
+// TestErrorFromParentLB_ResourceNotFound tests the case where a
+// resource-not-found error is received. The CDS LB policy sends a
+// resource-not-found error when the cluster resource associated with these LB
+// policies is removed by the management server. The test verifies that the
+// associated EDS is canceled and RPCs fail. It also ensures that when the
+// Cluster resource is added back, the EDS resource is re-requested and RPCs
+// being to succeed.
 func (s) TestErrorFromParentLB_ResourceNotFound(t *testing.T) {
 	// Start an xDS management server that uses a couple of channels to
 	// notify the test about the following events:
@@ -232,8 +225,7 @@ func (s) TestErrorFromParentLB_ResourceNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	cc, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 
@@ -259,7 +251,7 @@ func (s) TestErrorFromParentLB_ResourceNotFound(t *testing.T) {
 	// Wait for the EDS resource to be not requested anymore.
 	select {
 	case <-ctx.Done():
-		t.Fatal("Timeout when waiting for EDS resource to not requested")
+		t.Fatal("Timeout when waiting for EDS resource to not be requested")
 	case <-edsResourceCanceledCh:
 	}
 
@@ -318,7 +310,7 @@ func (s) TestErrorFromParentLB_ResourceNotFound(t *testing.T) {
 }
 
 // Test verifies that when the received Cluster resource contains outlier
-// detection configuration, the LB config pushed to the child policy contains
+// detection configuration, the LB config pushed to the priority policy contains
 // the appropriate configuration for the outlier detection LB policy.
 func (s) TestOutlierDetectionConfigPropagationToChildPolicy(t *testing.T) {
 	// Unregister the priority balancer builder for the duration of this test,
@@ -382,8 +374,7 @@ func (s) TestOutlierDetectionConfigPropagationToChildPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create xDS client, configure cds_experimental LB policy with a manual
-	// resolver, and dial the test backends.
+	// Create xDS client, xdsResolver, and dial the test backends.
 	_, cleanup := setupAndDial(t, bootstrapContents)
 	defer cleanup()
 

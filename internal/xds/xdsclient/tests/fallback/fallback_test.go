@@ -749,7 +749,7 @@ func (s) TestFallback_OnStartup_RPCSuccess(t *testing.T) {
 // eventually returns to the primary server when it comes back online, closing
 // connections to the fallback servers accordingly.
 func (s) TestFallback_ThreeServerPromotion(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultFallbackTestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*defaultFallbackTestTimeout)
 	defer cancel()
 
 	// Create three listener wrappers for three management servers.

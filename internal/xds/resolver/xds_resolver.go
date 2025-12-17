@@ -231,8 +231,10 @@ type xdsResolver struct {
 }
 
 // ResolveNow is a no-op at this point.
-func (r *xdsResolver) ResolveNow(resolver.ResolveNowOptions) {
-	// if r.dm.
+func (r *xdsResolver) ResolveNow(opts resolver.ResolveNowOptions) {
+	if r.dm != nil {
+		r.dm.ResolveNow(opts)
+	}
 }
 
 func (r *xdsResolver) Close() {
@@ -328,6 +330,7 @@ func (r *xdsResolver) sendNewServiceConfig(cs stoppableConfigSelector) bool {
 		ServiceConfig: r.cc.ParseServiceConfig(string(sc)),
 	}, cs)
 	state = xdsresource.SetXDSConfig(state, r.xdsConfig)
+	state = xdsdepmgr.SetDependencyManager(state, r.dm)
 	if err := r.cc.UpdateState(xdsclient.SetClient(state, r.xdsClient)); err != nil {
 		if r.logger.V(2) {
 			r.logger.Infof("Channel rejected new state: %+v with error: %v", state, err)

@@ -1315,10 +1315,19 @@ func (s) TestAggregateClusterNoLeafCluster(t *testing.T) {
 		},
 		Clusters: map[string]*xdsresource.ClusterResult{
 			defaultTestClusterName: {
-				Err: fmt.Errorf("[xDS node id: %v]: %v", nodeID, fmt.Errorf("no leaf clusters found for aggregate cluster")),
+				Err: fmt.Errorf("[xDS node id: %v]: %v", nodeID, fmt.Errorf("aggregate cluster graph has no leaf clusters")),
 			},
 			clusterNameB: {
-				Err: fmt.Errorf("[xDS node id: %v]: %v", nodeID, fmt.Errorf("no leaf clusters found for aggregate cluster")),
+				Config: xdsresource.ClusterConfig{
+					Cluster: &xdsresource.ClusterUpdate{
+						ClusterName: clusterNameB,
+						ClusterType: xdsresource.ClusterTypeAggregate,
+						PrioritizedClusterNames: []string{clusterNameA},
+					},
+					AggregateConfig: &xdsresource.AggregateConfig{
+						LeafClusters: []string{},
+					},
+				},
 			},
 		},
 	}
@@ -1394,7 +1403,7 @@ func (s) TestAggregateClusterMaxDepth(t *testing.T) {
 
 	// Populate the Clusters map with all clusters,except the last one, each
 	// having the common error
-	for i := 0; i < 17; i++ {
+	for i := 0; i < 16; i++ {
 		clusterName := fmt.Sprintf("agg-%d", i)
 
 		// The ClusterResult only needs the Err field set to the common error
