@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 	"strings"
 	"sync"
@@ -1037,13 +1038,12 @@ func (s) TestResolverDelayedOnCommitted(t *testing.T) {
 	newClusterName := "new-" + defaultTestClusterName
 	newEndpointName := "new-" + defaultTestEndpointName
 	resources.Routes = []*v3routepb.RouteConfiguration{e2e.DefaultRouteConfig(resources.Routes[0].Name, defaultTestServiceName, newClusterName)}
-	if err := mgmtServer.Update(ctx, resources); err != nil {
-		t.Fatal(err)
-	}
 	// sending the cluster separately to avoid the race between cluster resource
-	// error and route update.
-	resources.Clusters = []*v3clusterpb.Cluster{e2e.DefaultCluster(newClusterName, newEndpointName, e2e.SecurityLevelNone)}
-	resources.Endpoints = []*v3endpointpb.ClusterLoadAssignment{e2e.DefaultEndpoint(newEndpointName, defaultTestHostname, defaultTestPort)}
+	// error and route update. Appending the new clusters instead of replacing
+	// the old cluster to avoid cluster resource error being sent again and
+	// again which will cause the service config to sent multiple times.
+	resources.Clusters = append(resources.Clusters, e2e.DefaultCluster(newClusterName, newEndpointName, e2e.SecurityLevelNone))
+	resources.Endpoints = append(resources.Endpoints, e2e.DefaultEndpoint(newEndpointName, defaultTestHostname, defaultTestPort))
 	if err := mgmtServer.Update(ctx, resources); err != nil {
 		t.Fatal(err)
 	}
@@ -1090,7 +1090,7 @@ func (s) TestResolverDelayedOnCommitted(t *testing.T) {
 	if cluster := clustermanager.GetPickedClusterForTesting(resNew.Context); cluster != wantClusterName {
 		t.Fatalf("Picked cluster is %q, want %q", cluster, wantClusterName)
 	}
-
+	log.Print("emchandwani test part 2 finish")
 	// Invoke OnCommitted on the old RPC; should lead to a service config update
 	// that deletes the old cluster, as the old cluster no longer has any
 	// pending RPCs.
@@ -1467,4 +1467,172 @@ func (s) TestResolver_AutoHostRewrite(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (s) TestResolverKeepWatchOpen_ActiveRPCs(t *testing.T) {
+	clusterResourceNamesCh := make(chan []string, 1)
+	mgmtServer := e2e.StartManagementServer(t, e2e.ManagementServerOptions{
+		OnStreamRequest: func(_ int64, req *v3discoverypb.DiscoveryRequest) error {
+			if req.GetTypeUrl() == version.V3ClusterURL {
+				select {
+				case <-clusterResourceNamesCh:
+				default:
+				}
+				select {
+				case clusterResourceNamesCh <- req.GetResourceNames():
+				default:
+				}
+			}
+			return nil
+		},
+		AllowResourceSubset: true,
+	})
+
+	nodeID := uuid.New().String()
+	bc := e2e.DefaultBootstrapContents(t, nodeID, mgmtServer.Address)
+
+	// 3. Configure initial resources: Route -> ClusterA
+	clusterA := "cluster-A"
+	clusterB := "cluster-B"
+	routeConfigName := "route-config"
+	serviceName := "service-name"
+
+	// Initial Route: points to ClusterA
+	// routeA := e2e.RouteConfigResourceWithOptions(e2e.RouteConfigOptions{
+	// 	RouteConfigName:      routeConfigName,
+	// 	ListenerName:         serviceName,
+	// 	ClusterSpecifierType: e2e.RouteConfigClusterSpecifierTypeCluster,
+	// 	ClusterName:          clusterA,
+	// })
+	routeA := e2e.DefaultRouteConfig(routeConfigName, serviceName, clusterA)
+	listeners := []*v3listenerpb.Listener{e2e.DefaultClientListener(serviceName, routeConfigName)}
+	clusters := []*v3clusterpb.Cluster{
+		e2e.DefaultCluster(clusterA, "endpoint-A", e2e.SecurityLevelNone),
+		e2e.DefaultCluster(clusterB, "endpoint-B", e2e.SecurityLevelNone),
+	}
+	endpoints := []*v3endpointpb.ClusterLoadAssignment{
+		e2e.DefaultEndpoint("endpoint-A", "localhost", []uint32{8080}),
+		e2e.DefaultEndpoint("endpoint-B", "localhost", []uint32{8081}),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, []*v3routepb.RouteConfiguration{routeA}, clusters, endpoints)
+
+	// 4. Build Resolver
+	stateCh, _, _ := buildResolverForTarget(t, resolver.Target{URL: *testutils.MustParseURL("xds:///" + serviceName)}, bc)
+
+	// 6. Start an RPC (SelectConfig)
+	cs := verifyUpdateFromResolver(ctx, t, stateCh, wantServiceConfig(clusterA))
+	res, err := cs.SelectConfig(iresolver.RPCInfo{Context: ctx, Method: "/service/method"})
+	if err != nil {
+		t.Fatalf("cs.SelectConfig(): %v", err)
+	}
+	// RPC is now "active" (res.OnCommitted not called yet)
+
+	// // Drain valid updates from the resolver to ensure the channel doesn't block.
+	// // We only care about specific updates at specific points, but we must
+	// // consume all of them to prevent deadlocks in the resolver's serializer.
+	// go func() {
+	// 	for {
+	// 		select {
+	// 		case <-stateCh:
+	// 		case <-ctx.Done():
+	// 			return
+	// 		}
+	// 	}
+	// }()
+
+	// 7. Update Route to point to ClusterB (removing ClusterA)
+	// routeB := e2e.RouteConfigResourceWithOptions(e2e.RouteConfigOptions{
+	// 	RouteConfigName:      routeConfigName,
+	// 	ListenerName:         serviceName,
+	// 	ClusterSpecifierType: e2e.RouteConfigClusterSpecifierTypeCluster,
+	// 	ClusterName:          clusterB,
+	// })
+	routeB := e2e.DefaultRouteConfig(routeConfigName, serviceName, clusterB)
+	configureAllResourcesOnManagementServer(ctx, t, mgmtServer, nodeID, listeners, []*v3routepb.RouteConfiguration{routeB}, clusters, endpoints)
+
+	// 8. Wait for Resolver to pick up new config
+	// The resolver should send a new CDS request.
+	// We wait for a request that contains ClusterB, and assert it ALSO contains ClusterA.
+	found := false
+	for !found {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Timeout waiting for cluster A and B in CDS request")
+		case names := <-clusterResourceNamesCh:
+			hasA := false
+			hasB := false
+			for _, n := range names {
+				if n == clusterA {
+					hasA = true
+				}
+				if n == clusterB {
+					hasB = true
+				}
+			}
+			if hasB {
+				if !hasA {
+					t.Fatalf("Received CDS request with ClusterB but WITHOUT ClusterA (active RPC referencing it): %v", names)
+				}
+				found = true
+			}
+		}
+	}
+
+	wantService := fmt.Sprintf(`{
+   "loadBalancingConfig": [{
+	 "xds_cluster_manager_experimental": {
+	   "children": {
+		 "cluster:%s": {
+		   "childPolicy": [{
+			 "cds_experimental": {
+			   "cluster": "%s"
+			 }
+		   }]
+		 },
+		 "cluster:%s": {
+		   "childPolicy": [{
+			 "cds_experimental": {
+			   "cluster": "%s"
+			 }
+		   }]
+		 }
+	   }
+	 }
+   }]
+ }`, clusterA, clusterA, clusterB, clusterB)
+	verifyUpdateFromResolver(ctx, t, stateCh, wantService)
+	// 9. Finish the RPC
+	res.OnCommitted()
+
+	// 10. Verify ClusterA is dropped
+	// Expect a CDS request that does NOT contain ClusterA.
+	foundDrop := false
+	for !foundDrop {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Timeout waiting for cluster A to be dropped after RPC commit")
+		case names := <-clusterResourceNamesCh:
+			hasA := false
+			hasB := false
+			for _, n := range names {
+				log.Printf("emchandwani , finAL TEST CLUSTER NAME : %v", n)
+				if n == clusterA {
+					hasA = true
+				}
+				if n == clusterB {
+					hasB = true
+				}
+			}
+			if !hasA && hasB {
+				log.Printf("emchandwani , final Test cluster drop names: %v", names)
+				foundDrop = true
+			}
+		}
+	}
+	verifyUpdateFromResolver(ctx, t, stateCh, wantServiceConfig(clusterB))
+	verifyUpdateFromResolver(ctx, t, stateCh, wantServiceConfig(clusterB))
 }

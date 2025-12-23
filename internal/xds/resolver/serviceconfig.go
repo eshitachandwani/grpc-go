@@ -39,6 +39,7 @@ import (
 	"google.golang.org/grpc/internal/xds/balancer/clustermanager"
 	"google.golang.org/grpc/internal/xds/httpfilter"
 	"google.golang.org/grpc/internal/xds/xdsclient/xdsresource"
+	"google.golang.org/grpc/internal/xds/xdsdepmgr"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -153,10 +154,11 @@ type configSelector struct {
 	sendNewServiceConfig func() // Function to send a new service config to gRPC.
 
 	// Configuration received from the xDS management server.
-	virtualHost      virtualHost
-	routes           []route
-	clusters         map[string]*clusterInfo
-	httpFilterConfig []xdsresource.HTTPFilter
+	virtualHost          virtualHost
+	routes               []route
+	clusters             map[string]*clusterInfo
+	clusterSubscriptions map[string]*xdsdepmgr.ClusterRef
+	httpFilterConfig     []xdsresource.HTTPFilter
 }
 
 var errNoMatchedRouteFound = status.Errorf(codes.Unavailable, "no matched route was found")
@@ -194,8 +196,10 @@ func (cs *configSelector) SelectConfig(rpcInfo iresolver.RPCInfo) (*iresolver.RP
 
 	// Add a ref to the selected cluster, as this RPC needs this cluster until
 	// it is committed.
-	ref := &cs.clusters[cluster.name].refCount
-	atomic.AddInt32(ref, 1)
+	// ref := &cs.clusters[cluster.name].refCount
+	// atomic.AddInt32(ref, 1)
+	cr := cs.clusterSubscriptions[cluster.name]
+	atomic.AddInt32(&cr.RefCount, 1)
 
 	lbCtx := clustermanager.SetPickedCluster(rpcInfo.Context, cluster.name)
 	lbCtx = iringhash.SetXDSRequestHash(lbCtx, cs.generateHash(rpcInfo, rt.hashPolicies))
@@ -207,7 +211,8 @@ func (cs *configSelector) SelectConfig(rpcInfo iresolver.RPCInfo) (*iresolver.RP
 		OnCommitted: func() {
 			// When the RPC is committed, the cluster is no longer required.
 			// Decrease its ref.
-			if v := atomic.AddInt32(ref, -1); v == 0 {
+			cr.Unsubscribe()
+			if cr.RefCountReturn() == 0 {
 				// This entry will be removed from activeClusters when
 				// producing the service config for the empty update.
 				cs.sendNewServiceConfig()
@@ -314,11 +319,14 @@ func (cs *configSelector) stop() {
 	needUpdate := false
 	// Loops over cs.clusters, but these are pointers to entries in
 	// activeClusters.
-	for _, ci := range cs.clusters {
-		if v := atomic.AddInt32(&ci.refCount, -1); v == 0 {
+	for name, _ := range cs.clusters {
+		cr := cs.clusterSubscriptions[name]
+		cr.Unsubscribe()
+		if v := cr.RefCountReturn(); v == 0 {
 			needUpdate = true
 		}
 	}
+
 	// We stop the old config selector immediately after sending a new config
 	// selector; we need another update to delete clusters from the config (if
 	// we don't have another update pending already).

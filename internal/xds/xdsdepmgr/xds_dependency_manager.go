@@ -470,16 +470,18 @@ func (m *DependencyManager) applyRouteConfigUpdateLocked(update *xdsresource.Rou
 
 	for _, rt := range matchVH.Routes {
 		for _, cluster := range rt.WeightedClusters {
+
 			newClusters[cluster.Name] = true
 		}
 	}
 	// Cancel watch for clusters not seen in route config
-	for name := range m.clustersFromRouteConfig {
-		if _, ok := newClusters[name]; !ok {
-			m.clusterWatchers[name].stop()
-			delete(m.clusterWatchers, name)
-		}
-	}
+	// for name := range m.clustersFromRouteConfig {
+	// 	if _, ok := newClusters[name]; !ok {
+
+	// 		// m.clusterWatchers[name].stop()
+	// 		// delete(m.clusterWatchers, name)
+	// 	}
+	// }
 
 	// Watch for new clusters is started in populateClusterConfigLocked to
 	// avoid repeating the code.
@@ -541,12 +543,8 @@ func (m *DependencyManager) onListenerResourceUpdate(update *xdsresource.Listene
 			m.onRouteConfigResourceAmbientError(m.rdsResourceName, err, onDone)
 		},
 	}
-	if m.routeConfigWatcher != nil {
-		m.routeConfigWatcher.stop = xdsresource.WatchRouteConfig(m.xdsClient, m.rdsResourceName, rw)
-	} else {
-		m.routeConfigWatcher = &xdsResourceState[xdsresource.RouteConfigUpdate, routeExtras]{
-			stop: xdsresource.WatchRouteConfig(m.xdsClient, m.rdsResourceName, rw),
-		}
+	m.routeConfigWatcher = &xdsResourceState[xdsresource.RouteConfigUpdate, routeExtras]{
+		stop: xdsresource.WatchRouteConfig(m.xdsClient, m.rdsResourceName, rw),
 	}
 }
 
@@ -567,6 +565,7 @@ func (m *DependencyManager) onListenerResourceError(err error, onDone func()) {
 	m.listenerWatcher.setLastError(err)
 	m.rdsResourceName = ""
 	m.routeConfigWatcher = nil
+	m.clustersFromRouteConfig = nil
 	m.watcher.Error(fmt.Errorf("listener resource error: %v", m.annotateErrorWithNodeID(err)))
 }
 
@@ -925,8 +924,17 @@ func DependencyManagerFromResolverState(state resolver.State) *DependencyManager
 // DependencyManager if the reference count reaches zero.
 type ClusterRef struct {
 	name     string
-	refCount int32
+	RefCount int32
 	m        *DependencyManager
+}
+
+func (m *DependencyManager) CreateClusterRef(name string) *ClusterRef {
+	cr := &ClusterRef{
+		name:     name,
+		RefCount: 1,
+		m:        m,
+	}
+	return cr
 }
 
 // ClusterSubscription increments the reference count for the cluster and
@@ -937,7 +945,7 @@ func (m *DependencyManager) ClusterSubscription(name string) *ClusterRef {
 	defer m.mu.Unlock()
 	subs, ok := m.clusterSubscriptions[name]
 	if ok {
-		ref := &subs.refCount
+		ref := &subs.RefCount
 		atomic.AddInt32(ref, 1)
 		return subs
 	}
@@ -954,12 +962,21 @@ func (m *DependencyManager) ClusterSubscription(name string) *ClusterRef {
 func (c *ClusterRef) Unsubscribe() {
 	c.m.mu.Lock()
 	defer c.m.mu.Unlock()
-	ref := atomic.AddInt32(&c.refCount, -1)
+	ref := atomic.AddInt32(&c.RefCount, -1)
 	if ref <= 0 {
 		delete(c.m.clusterSubscriptions, c.name)
+		if _, ok := c.m.clustersFromRouteConfig[c.name]; !ok {
+			// This cluster is no longer in the route config, and it has no
+			// more references. Now is the time to cancel the watch.
+			// if cw, ok := c.m.clusterWatchers[c.name]; ok {
+			// 	cw.stop()
+			// 	delete(c.m.clusterWatchers, c.name)
+			// }
+			c.m.maybeSendUpdateLocked()
+		}
 	}
+}
 
-	if _, ok := c.m.clustersFromRouteConfig[c.name]; !ok {
-		c.m.maybeSendUpdateLocked()
-	}
+func (c *ClusterRef) RefCountReturn() int32 {
+	return atomic.LoadInt32(&c.RefCount)
 }

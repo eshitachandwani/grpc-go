@@ -134,6 +134,7 @@ func (b *xdsResolverBuilder) Build(target resolver.Target, cc resolver.ClientCon
 		xdsClient:       client,
 		xdsClientClose:  xdsClientClose,
 		activeClusters:  make(map[string]*clusterInfo),
+		clusterSubs:     make(map[string]*xdsdepmgr.ClusterRef),
 		channelID:       rand.Uint64(),
 		ldsResourceName: ldsResourceName,
 
@@ -229,6 +230,7 @@ type xdsResolver struct {
 	// activeClusters is a map from cluster name to information about the
 	// cluster that includes a ref count and load balancing configuration.
 	activeClusters    map[string]*clusterInfo
+	clusterSubs       map[string]*xdsdepmgr.ClusterRef
 	curConfigSelector stoppableConfigSelector
 }
 
@@ -303,6 +305,7 @@ func (r *xdsResolver) sendNewServiceConfig(cs stoppableConfigSelector) bool {
 	// Delete entries from r.activeClusters with zero references;
 	// otherwise serviceConfigJSON will generate a config including
 	// them.
+	// emchandwani delete entries from active cluster not present in new config
 	r.pruneActiveClusters()
 
 	errCS, ok := cs.(*erroringConfigSelector)
@@ -359,9 +362,10 @@ func (r *xdsResolver) newConfigSelector() (*configSelector, error) {
 		virtualHost: virtualHost{
 			retryConfig: r.xdsConfig.VirtualHost.RetryConfig,
 		},
-		routes:           make([]route, len(r.xdsConfig.VirtualHost.Routes)),
-		clusters:         make(map[string]*clusterInfo),
-		httpFilterConfig: r.xdsConfig.Listener.HTTPFilters,
+		routes:               make([]route, len(r.xdsConfig.VirtualHost.Routes)),
+		clusters:             make(map[string]*clusterInfo),
+		clusterSubscriptions: make(map[string]*xdsdepmgr.ClusterRef),
+		httpFilterConfig:     r.xdsConfig.Listener.HTTPFilters,
 	}
 
 	for i, rt := range r.xdsConfig.VirtualHost.Routes {
@@ -370,8 +374,10 @@ func (r *xdsResolver) newConfigSelector() (*configSelector, error) {
 			clusterName := clusterSpecifierPluginPrefix + rt.ClusterSpecifierPlugin
 			clusters.Add(&routeCluster{name: clusterName}, 1)
 			ci := r.addOrGetActiveClusterInfo(clusterName)
+			clusterref := r.addOrGetClusterRef(clusterName, "")
 			ci.cfg = xdsChildConfig{ChildPolicy: balancerConfig(r.xdsConfig.RouteConfig.ClusterSpecifierPlugins[rt.ClusterSpecifierPlugin])}
 			cs.clusters[clusterName] = ci
+			cs.clusterSubscriptions[clusterName] = clusterref
 		} else {
 			for _, wc := range rt.WeightedClusters {
 				clusterName := clusterPrefix + wc.Name
@@ -384,8 +390,10 @@ func (r *xdsResolver) newConfigSelector() (*configSelector, error) {
 					interceptor: interceptor,
 				}, int64(wc.Weight))
 				ci := r.addOrGetActiveClusterInfo(clusterName)
+				clusterref := r.addOrGetClusterRef(clusterName, wc.Name)
 				ci.cfg = xdsChildConfig{ChildPolicy: newBalancerConfig(cdsName, cdsBalancerConfig{Cluster: wc.Name})}
 				cs.clusters[clusterName] = ci
+				cs.clusterSubscriptions[clusterName] = clusterref
 			}
 		}
 		cs.routes[i].clusters = clusters
@@ -406,21 +414,45 @@ func (r *xdsResolver) newConfigSelector() (*configSelector, error) {
 	// Account for this config selector's clusters.  Do this after no further
 	// errors may occur.  Note: cs.clusters are pointers to entries in
 	// activeClusters.
-	for _, ci := range cs.clusters {
-		atomic.AddInt32(&ci.refCount, 1)
-	}
+	// for _, ci := range cs.clusters {
+	// 	atomic.AddInt32(&ci.refCount, 1)
+	// }
 
 	return cs, nil
 }
 
 // pruneActiveClusters deletes entries in r.activeClusters with zero
 // references.
+// Deletes entries from r.activeClusters with zero references;
 func (r *xdsResolver) pruneActiveClusters() {
-	for cluster, ci := range r.activeClusters {
-		if atomic.LoadInt32(&ci.refCount) == 0 {
+	for cluster := range r.activeClusters {
+		cr := r.clusterSubs[cluster]
+		if cr == nil || cr.RefCountReturn() == 0 {
 			delete(r.activeClusters, cluster)
+			delete(r.clusterSubs, cluster)
 		}
 	}
+}
+
+func (r *xdsResolver) addOrGetClusterRef(key string, name string) *xdsdepmgr.ClusterRef {
+	// cr := r.clusterSubs[key]
+	// if cr != nil {
+	// 	return cr
+	// }
+	var cr *xdsdepmgr.ClusterRef
+	if name == "" {
+		cr = r.clusterSubs[key]
+		if cr != nil {
+			atomic.AddInt32(&cr.RefCount, 1)
+			return cr
+		}
+		x := r.dm.CreateClusterRef(key)
+		cr = x
+	} else {
+		cr = r.dm.ClusterSubscription(name)
+	}
+	r.clusterSubs[key] = cr
+	return cr
 }
 
 func (r *xdsResolver) addOrGetActiveClusterInfo(name string) *clusterInfo {
@@ -428,15 +460,12 @@ func (r *xdsResolver) addOrGetActiveClusterInfo(name string) *clusterInfo {
 	if ci != nil {
 		return ci
 	}
-
-	ci = &clusterInfo{refCount: 0}
+	ci = &clusterInfo{}
 	r.activeClusters[name] = ci
 	return ci
 }
 
 type clusterInfo struct {
-	// number of references to this cluster; accessed atomically
-	refCount int32
 	// cfg is the child configuration for this cluster, containing either the
 	// csp config or the cds cluster config.
 	cfg xdsChildConfig
