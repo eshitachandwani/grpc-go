@@ -72,6 +72,10 @@ git ls-files | not xargs -I {} sh -c '[ -n "$(tail -c 1 "{}" 2>/dev/null)" ] && 
 # - Ensure that no tabs are found in markdown files.
 not git grep -n $'\t' -- '*.md'
 
+# - Check for files without a terminating newline
+git ls-files | awk 'NF && !/\n$/{print; exit}' | fail_on_output || echo "All files have a terminating newline."
+
+
 # - Ensure all xds proto imports are renamed to *pb or *grpc.
 git grep '"github.com/envoyproxy/go-control-plane/envoy' -- '*.go' ':(exclude)*.pb.go' | not grep -v 'pb "\|grpc "'
 
