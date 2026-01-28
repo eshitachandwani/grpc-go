@@ -1038,6 +1038,7 @@ func (t *http2Client) Close(err error) {
 	case <-timer.C:
 		t.logger.Infof("Failed to write a GOAWAY frame as part of connection close after %s. Giving up and closing the transport.", goAwayLoopyWriterTimeout)
 	}
+	<-t.readerDone
 	t.cancel()
 	t.conn.Close()
 	// Waits for the reader and keepalive goroutines to exit before returning to
