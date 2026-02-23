@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package cdsbalancer
+package clusterimpl_test
 
 import (
 	"context"
@@ -37,6 +37,7 @@ import (
 	"google.golang.org/grpc/internal/stubserver"
 	"google.golang.org/grpc/internal/testutils"
 	"google.golang.org/grpc/internal/testutils/xds/e2e"
+	"google.golang.org/grpc/internal/xds/balancer/clusterimpl"
 	"google.golang.org/grpc/internal/xds/bootstrap"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/resolver"
@@ -54,6 +55,15 @@ import (
 	_ "google.golang.org/grpc/credentials/tls/certprovider/pemfile" // Register the file watcher certificate provider plugin.
 	_ "google.golang.org/grpc/internal/xds/httpfilter/router"       // Register the router filter.
 	_ "google.golang.org/grpc/internal/xds/resolver"                // Register the xds resolver
+)
+
+const (
+	target      = "test.service"
+	routeName   = "test_route"
+	clusterName = "cluster1"
+	serviceName = "service1"
+	host        = "localhost"
+	port        = 8080
 )
 
 // Common setup for security tests:
@@ -620,15 +630,15 @@ func (s) TestSecurityConfigUpdate_GoodToBad(t *testing.T) {
 // Verifies that the connection between the client and the server is secure.
 func (s) TestSystemRootCertsSecurityConfig(t *testing.T) {
 	origFlag := envconfig.XDSSystemRootCertsEnabled
-	origSRCF := x509SystemCertPoolFunc
+	origSRCF := clusterimpl.X509SystemCertPoolFunc
 	defer func() {
 		envconfig.XDSSystemRootCertsEnabled = origFlag
-		x509SystemCertPoolFunc = origSRCF
+		clusterimpl.X509SystemCertPoolFunc = origSRCF
 	}()
 	envconfig.XDSSystemRootCertsEnabled = true
 
 	systemRootCertsFuncCalled := false
-	x509SystemCertPoolFunc = func() (*x509.CertPool, error) {
+	clusterimpl.X509SystemCertPoolFunc = func() (*x509.CertPool, error) {
 		certData, err := os.ReadFile(testdata.Path("x509/server_ca_cert.pem"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to read certificate file: %w", err)

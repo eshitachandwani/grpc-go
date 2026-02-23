@@ -25,16 +25,22 @@ package clusterimpl
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/balancer/weightedroundrobin"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/tls/certprovider"
 	"google.golang.org/grpc/internal/balancer/gracefulswitch"
+	xdscredsinternal "google.golang.org/grpc/internal/credentials/xds"
 	"google.golang.org/grpc/internal/grpclog"
 	"google.golang.org/grpc/internal/pretty"
 	xdsinternal "google.golang.org/grpc/internal/xds"
@@ -60,6 +66,11 @@ var (
 	// tests to give tests visibility into exactly when certain events happen.
 	clientConnUpdateHook = func() {}
 	pickerUpdateHook     = func() {}
+	buildProvider        = buildProviderFunc
+
+	// X509SystemCertPoolFunc is used for mocking the system cert pool for
+	// tests.
+	X509SystemCertPoolFunc = x509.SystemCertPool
 )
 
 func init() {
@@ -69,12 +80,26 @@ func init() {
 type bb struct{}
 
 func (bb) Build(cc balancer.ClientConn, bOpts balancer.BuildOptions) balancer.Balancer {
+	hi := xdscredsinternal.NewHandshakeInfo(nil, nil, nil, false)
+	xdsHIPtr := unsafe.Pointer(hi)
 	b := &clusterImplBalancer{
+		xdsHIPtr:        &xdsHIPtr,
 		ClientConn:      cc,
 		loadWrapper:     loadstore.NewWrapper(),
 		requestCountMax: defaultRequestCountMax,
 	}
 	b.logger = prefixLogger(b)
+	var creds credentials.TransportCredentials
+	switch {
+	case bOpts.DialCreds != nil:
+		creds = bOpts.DialCreds
+	case bOpts.CredsBundle != nil:
+		creds = bOpts.CredsBundle.TransportCredentials()
+	}
+	if xc, ok := creds.(interface{ UsesXDS() bool }); ok && xc.UsesXDS() {
+		b.xdsCredsInUse = true
+	}
+	b.logger.Infof("xDS credentials in use: %v", b.xdsCredsInUse)
 	b.child = gracefulswitch.NewBalancer(b, bOpts)
 	b.logger.Infof("Created")
 	return b
@@ -120,6 +145,100 @@ type clusterImplBalancer struct {
 	requestCountMax       uint32                            // Max concurrent requests, from LB config.
 	requestCounter        *xdsclient.ClusterRequestsCounter // Tracks total inflight requests for a given service.
 	telemetryLabels       map[string]string                 // Telemetry labels to set on picks, from LB config.
+	xdsCredsInUse         bool
+	xdsHIPtr              *unsafe.Pointer // Accessed atomically.
+	// The certificate providers are cached here to that they can be closed when
+	// a new provider is to be created.
+	cachedRoot     certprovider.Provider
+	cachedIdentity certprovider.Provider
+}
+
+func buildProviderFunc(configs map[string]*certprovider.BuildableConfig, instanceName, certName string, wantIdentity, wantRoot bool) (certprovider.Provider, error) {
+	cfg, ok := configs[instanceName]
+	if !ok {
+		// Defensive programming. If a resource received from the management
+		// server contains a certificate provider instance name that is not
+		// found in the bootstrap, the resource is NACKed by the xDS client.
+		return nil, fmt.Errorf("certificate provider instance %q not found in bootstrap file", instanceName)
+	}
+	provider, err := cfg.Build(certprovider.BuildOptions{
+		CertName:     certName,
+		WantIdentity: wantIdentity,
+		WantRoot:     wantRoot,
+	})
+	if err != nil {
+		// This error is not expected since the bootstrap process parses the
+		// config and makes sure that it is acceptable to the plugin. Still, it
+		// is possible that the plugin parses the config successfully, but its
+		// Build() method errors out.
+		return nil, fmt.Errorf("xds: failed to get security plugin instance (%+v): %v", cfg, err)
+	}
+	return provider, nil
+}
+
+// handleSecurityConfig processes the security configuration received from the
+// management server, creates appropriate certificate provider plugins, and
+// updates the HandshakeInfo which is added as an address attribute in
+// NewSubConn() calls.
+//
+// Only executed in the context of a serializer callback.
+func (b *clusterImplBalancer) handleSecurityConfig(config *xdsresource.SecurityConfig) error {
+	// If xdsCredentials are not in use, i.e, the user did not want to get
+	// security configuration from an xDS server, we should not be acting on the
+	// received security config here. Doing so poses a security threat.
+	if !b.xdsCredsInUse {
+		return nil
+	}
+	var xdsHI *xdscredsinternal.HandshakeInfo
+
+	// Security config being nil is a valid case where the management server has
+	// not sent any security configuration. The xdsCredentials implementation
+	// handles this by delegating to its fallback credentials.
+	if config == nil {
+		// We need to explicitly set the fields to nil here since this might be
+		// a case of switching from a good security configuration to an empty
+		// one where fallback credentials are to be used.
+		xdsHI = xdscredsinternal.NewHandshakeInfo(nil, nil, nil, false)
+		atomic.StorePointer(b.xdsHIPtr, unsafe.Pointer(xdsHI))
+		return nil
+
+	}
+
+	// A root provider is required whether we are using TLS or mTLS.
+	cpc := b.xdsClient.BootstrapConfig().CertProviderConfigs()
+	var rootProvider certprovider.Provider
+	if config.UseSystemRootCerts {
+		rootProvider = systemRootCertsProvider{}
+	} else {
+		rp, err := buildProvider(cpc, config.RootInstanceName, config.RootCertName, false, true)
+		if err != nil {
+			return err
+		}
+		rootProvider = rp
+	}
+
+	// The identity provider is only present when using mTLS.
+	var identityProvider certprovider.Provider
+	if name, cert := config.IdentityInstanceName, config.IdentityCertName; name != "" {
+		var err error
+		identityProvider, err = buildProvider(cpc, name, cert, true, false)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Close the old providers and cache the new ones.
+	if b.cachedRoot != nil {
+		b.cachedRoot.Close()
+	}
+	if b.cachedIdentity != nil {
+		b.cachedIdentity.Close()
+	}
+	b.cachedRoot = rootProvider
+	b.cachedIdentity = identityProvider
+	xdsHI = xdscredsinternal.NewHandshakeInfo(rootProvider, identityProvider, config.SubjectAltNameMatchers, false)
+	atomic.StorePointer(b.xdsHIPtr, unsafe.Pointer(xdsHI))
+	return nil
 }
 
 // handleDropAndRequestCountLocked compares drop and request counter in newConfig with
@@ -275,6 +394,19 @@ func (b *clusterImplBalancer) UpdateClientConnState(s balancer.ClientConnState) 
 		}
 		b.xdsClient = c
 	}
+	xdsConfig := xdsresource.XDSConfigFromResolverState(s.ResolverState)
+	if xdsConfig == nil {
+		return balancer.ErrBadResolverState
+	}
+	clusterCfg, ok := xdsConfig.Clusters[newConfig.Cluster]
+	if !ok {
+		return balancer.ErrBadResolverState
+	}
+	clusterUpdate := clusterCfg.Config.Cluster
+
+	if err := b.handleSecurityConfig(clusterUpdate.SecurityCfg); err != nil {
+		return err
+	}
 
 	// Update load reporting config. This needs to be done before updating the
 	// child policy because we need the loadStore from the updated client to be
@@ -351,6 +483,12 @@ func (b *clusterImplBalancer) Close() {
 	b.child.Close()
 	b.childState = balancer.State{}
 
+	if b.cachedRoot != nil {
+		b.cachedRoot.Close()
+	}
+	if b.cachedIdentity != nil {
+		b.cachedIdentity.Close()
+	}
 	if b.cancelLoadReport != nil {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), loadStoreStopTimeout)
 		defer stopCancel()
@@ -425,6 +563,7 @@ func (b *clusterImplBalancer) NewSubConn(addrs []resolver.Address, opts balancer
 	newAddrs := make([]resolver.Address, len(addrs))
 	for i, addr := range addrs {
 		newAddrs[i] = xdsinternal.SetXDSHandshakeClusterName(addr, clusterName)
+		newAddrs[i] = xdscredsinternal.SetHandshakeInfo(newAddrs[i], b.xdsHIPtr)
 	}
 	var sc balancer.SubConn
 	scw := &scWrapper{}
@@ -450,4 +589,20 @@ func (b *clusterImplBalancer) RemoveSubConn(sc balancer.SubConn) {
 
 func (b *clusterImplBalancer) UpdateAddresses(sc balancer.SubConn, _ []resolver.Address) {
 	b.logger.Errorf("UpdateAddresses(%v) called unexpectedly", sc)
+}
+
+// systemRootCertsProvider implements a certprovider.Provider that returns the
+// system default root certificates for validation.
+type systemRootCertsProvider struct{}
+
+func (systemRootCertsProvider) Close() {}
+
+func (systemRootCertsProvider) KeyMaterial(context.Context) (*certprovider.KeyMaterial, error) {
+	rootCAs, err := X509SystemCertPoolFunc()
+	if err != nil {
+		return nil, err
+	}
+	return &certprovider.KeyMaterial{
+		Roots: rootCAs,
+	}, nil
 }
