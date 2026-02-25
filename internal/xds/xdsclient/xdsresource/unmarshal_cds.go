@@ -51,6 +51,8 @@ var ValidateClusterAndConstructClusterUpdateForTesting = validateClusterAndConst
 // to this value by the management server.
 const transportSocketName = "envoy.transport_sockets.tls"
 
+const maxSNILength = 255
+
 func unmarshalClusterResource(r *anypb.Any, serverCfg *bootstrap.ServerConfig) (string, ClusterUpdate, error) {
 	r, err := UnwrapResource(r)
 	if err != nil {
@@ -295,14 +297,24 @@ func securityConfigFromCluster(cluster *v3clusterpb.Cluster) (*SecurityConfig, e
 		return nil, fmt.Errorf("failed to unmarshal UpstreamTlsContext in CDS response: %v", err)
 	}
 	// The following fields from `UpstreamTlsContext` are ignored:
-	// - sni
 	// - allow_renegotiation
 	// - max_session_keys
 	if upstreamCtx.GetCommonTlsContext() == nil {
 		return nil, errors.New("UpstreamTlsContext in CDS response does not contain a CommonTlsContext")
 	}
 
-	return securityConfigFromCommonTLSContext(upstreamCtx.GetCommonTlsContext(), false)
+	sc, err := securityConfigFromCommonTLSContext(upstreamCtx.GetCommonTlsContext(), false)
+	if err != nil {
+		return nil, err
+	}
+	// Add SNI related fields to security config.
+	sc.Sni = upstreamCtx.Sni
+	if len(sc.Sni) > maxSNILength {
+		return nil, fmt.Errorf("SNI value in UpstreamTlsContext in CDS response exceeds maximum length of %d: %q", maxSNILength, sc.Sni)
+	}
+	sc.AutoHostSni = upstreamCtx.AutoHostSni
+	sc.AutoSniSanValidation = upstreamCtx.AutoSniSanValidation
+	return sc, nil
 }
 
 // common is expected to be not nil.

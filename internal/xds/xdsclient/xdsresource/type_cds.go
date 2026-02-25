@@ -120,6 +120,16 @@ type SecurityConfig struct {
 	// after unmarshalling xDS resources ensures that this field is set only
 	// when both RootCertName and RootInstanceName are empty.
 	UseSystemRootCerts bool
+	// SNI string to use when creating TLS backend connections.
+	Sni string
+	// If true, replaces the SNI for the connection with the hostname of the
+	// upstream host (if available). The upstream host is the DNS hostname for
+	// DNS clusters, or Endpoint.hostname for EDS clusters.
+	AutoHostSni bool
+	// If true, replaces any Subject Alternative Name (SAN) validations with a
+	// validation for a DNS SAN matching the SNI value sent. The validation uses
+	// the actual requested SNI, regardless of how the SNI is configured.
+	AutoSniSanValidation bool
 }
 
 // Equal returns true if sc is equal to other.

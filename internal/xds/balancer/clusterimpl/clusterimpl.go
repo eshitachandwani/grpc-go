@@ -28,6 +28,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -80,7 +81,7 @@ func init() {
 type bb struct{}
 
 func (bb) Build(cc balancer.ClientConn, bOpts balancer.BuildOptions) balancer.Balancer {
-	hi := xdscredsinternal.NewHandshakeInfo(nil, nil, nil, false)
+	hi := xdscredsinternal.NewHandshakeInfo(nil, nil, nil, false, "", false)
 	xdsHIPtr := unsafe.Pointer(hi)
 	b := &clusterImplBalancer{
 		xdsHIPtr:        &xdsHIPtr,
@@ -182,7 +183,7 @@ func buildProviderFunc(configs map[string]*certprovider.BuildableConfig, instanc
 // NewSubConn() calls.
 //
 // Only executed in the context of a serializer callback.
-func (b *clusterImplBalancer) handleSecurityConfig(config *xdsresource.SecurityConfig) error {
+func (b *clusterImplBalancer) handleSecurityConfig(config *xdsresource.SecurityConfig, hostname string) error {
 	// If xdsCredentials are not in use, i.e, the user did not want to get
 	// security configuration from an xDS server, we should not be acting on the
 	// received security config here. Doing so poses a security threat.
@@ -198,7 +199,7 @@ func (b *clusterImplBalancer) handleSecurityConfig(config *xdsresource.SecurityC
 		// We need to explicitly set the fields to nil here since this might be
 		// a case of switching from a good security configuration to an empty
 		// one where fallback credentials are to be used.
-		xdsHI = xdscredsinternal.NewHandshakeInfo(nil, nil, nil, false)
+		xdsHI = xdscredsinternal.NewHandshakeInfo(nil, nil, nil, false, "", false)
 		atomic.StorePointer(b.xdsHIPtr, unsafe.Pointer(xdsHI))
 		return nil
 
@@ -236,7 +237,15 @@ func (b *clusterImplBalancer) handleSecurityConfig(config *xdsresource.SecurityC
 	}
 	b.cachedRoot = rootProvider
 	b.cachedIdentity = identityProvider
-	xdsHI = xdscredsinternal.NewHandshakeInfo(rootProvider, identityProvider, config.SubjectAltNameMatchers, false)
+	if config.AutoHostSni && hostname != "" {
+		host, _, err := net.SplitHostPort(hostname)
+		if err != nil {
+			config.Sni = hostname
+		}
+		config.Sni = host
+
+	}
+	xdsHI = xdscredsinternal.NewHandshakeInfo(rootProvider, identityProvider, config.SubjectAltNameMatchers, false, config.Sni, config.AutoSniSanValidation)
 	atomic.StorePointer(b.xdsHIPtr, unsafe.Pointer(xdsHI))
 	return nil
 }
@@ -403,8 +412,22 @@ func (b *clusterImplBalancer) UpdateClientConnState(s balancer.ClientConnState) 
 		return balancer.ErrBadResolverState
 	}
 	clusterUpdate := clusterCfg.Config.Cluster
+	var hostname string
+	if clusterUpdate.ClusterType == xdsresource.ClusterTypeLogicalDNS && clusterUpdate.DNSHostName != "" {
+		hostname = clusterUpdate.DNSHostName
+	} else if clusterUpdate.ClusterType == xdsresource.ClusterTypeEDS {
+		b.logger.Infof("EDS update %v", pretty.ToJSON(clusterCfg.Config.EndpointConfig.EDSUpdate))
+		eds := clusterCfg.Config.EndpointConfig.EDSUpdate
 
-	if err := b.handleSecurityConfig(clusterUpdate.SecurityCfg); err != nil {
+		// Check if the chain of slices is populated
+		if len(eds.Localities) > 0 &&
+			len(eds.Localities[0].Endpoints) > 0 &&
+			len(eds.Localities[0].Endpoints[0].ResolverEndpoint.Addresses) > 0 {
+
+			hostname = xdsresource.Hostname(eds.Localities[0].Endpoints[0].ResolverEndpoint.Addresses[0])
+		}
+	}
+	if err := b.handleSecurityConfig(clusterUpdate.SecurityCfg, hostname); err != nil {
 		return err
 	}
 

@@ -1,0 +1,379 @@
+=== RUN   Test
+=== RUN   Test/ClientSideXDS_FallbackSANMatchers
+    setup.go:45: Created new snapshot cache...
+    tlogger.go:133: INFO server.go:717 [core] [Server #1] Server created  (t=+1.668834ms)
+    setup.go:45: Registered Aggregated Discovery Service (ADS)...
+    setup.go:45: xDS management server serving at: 127.0.0.1:60461...
+    tlogger.go:133: INFO server.go:913 [core] [Server #1 ListenSocket #2] ListenSocket created  (t=+1.787875ms)
+    tlogger.go:133: INFO server.go:717 [core] [Server #3] Server created  (t=+4.962375ms)
+    stubserver.go:300: Started test service backend at "127.0.0.1:60462"
+    tlogger.go:133: INFO server.go:913 [core] [Server #3 ListenSocket #4] ListenSocket created  (t=+5.011167ms)
+    tlogger.go:133: INFO server.go:717 [core] [Server #5] Server created  (t=+5.175417ms)
+    stubserver.go:300: Started test service backend at "127.0.0.1:60463"
+    tlogger.go:133: INFO server.go:913 [core] [Server #5 ListenSocket #6] ListenSocket created  (t=+5.204292ms)
+    server.go:229: Created new resource snapshot...
+    logging.go:30: setting snapshot for node 3f6bfcba-6413-4fdd-9ce0-e7ab24b12a6b
+    server.go:235: Updated snapshot cache with resource snapshot...
+    tlogger.go:133: INFO clientconn.go:1799 [core] original dial target is: "xds:///my-service-client-side-xds"  (t=+5.771875ms)
+    tlogger.go:133: INFO clientconn.go:514 [core] [Channel #7] Channel created for target "xds:///my-service-client-side-xds"  (t=+5.784167ms)
+    tlogger.go:133: INFO clientconn.go:245 [core] [Channel #7] parsed dial target is: resolver.Target{URL:url.URL{Scheme:"xds", Opaque:"", User:(*url.Userinfo)(nil), Host:"", Path:"/my-service-client-side-xds", Fragment:"", RawQuery:"", RawPath:"", RawFragment:"", ForceQuery:false, OmitHost:false}}  (t=+5.794625ms)
+    tlogger.go:133: INFO clientconn.go:246 [core] [Channel #7] Channel authority set to "my-service-client-side-xds"  (t=+5.800875ms)
+    tlogger.go:133: INFO clientconn.go:618 [core] [Channel #7] Channel Connectivity change to CONNECTING  (t=+5.840334ms)
+    tlogger.go:133: INFO pool.go:309 [xds] xDS node ID: 3f6bfcba-6413-4fdd-9ce0-e7ab24b12a6b  (t=+6.136084ms)
+    tlogger.go:133: INFO xds_resolver.go:153 [xds] [xds-resolver 0x31ab1c340480] Creating resolver for target: xds:///my-service-client-side-xds  (t=+6.157625ms)
+    tlogger.go:133: INFO clientconn.go:1799 [core] original dial target is: "passthrough:///127.0.0.1:60461"  (t=+6.248167ms)
+    tlogger.go:133: INFO clientconn.go:514 [core] [Channel #8] Channel created for target "passthrough:///127.0.0.1:60461"  (t=+6.255917ms)
+    tlogger.go:133: INFO clientconn.go:245 [core] [Channel #8] parsed dial target is: resolver.Target{URL:url.URL{Scheme:"passthrough", Opaque:"", User:(*url.Userinfo)(nil), Host:"", Path:"/127.0.0.1:60461", Fragment:"", RawQuery:"", RawPath:"", RawFragment:"", ForceQuery:false, OmitHost:false}}  (t=+6.263667ms)
+    tlogger.go:133: INFO clientconn.go:246 [core] [Channel #8] Channel authority set to "127.0.0.1:60461"  (t=+6.26925ms)
+    tlogger.go:133: INFO clientconn.go:419 [core] [Channel #7] Channel exiting idle mode  (t=+6.296ms)
+    tlogger.go:133: INFO clientconn.go:618 [core] [Channel #8] Channel Connectivity change to CONNECTING  (t=+6.374375ms)
+    tlogger.go:133: INFO resolver_wrapper.go:211 [core] [Channel #8] Resolver state updated: {
+          "Addresses": [
+            {
+              "Addr": "127.0.0.1:60461",
+              "ServerName": "",
+              "Attributes": null,
+              "BalancerAttributes": null,
+              "Metadata": null
+            }
+          ],
+          "Endpoints": [
+            {
+              "Addresses": [
+                {
+                  "Addr": "127.0.0.1:60461",
+                  "ServerName": "",
+                  "Attributes": null,
+                  "BalancerAttributes": null,
+                  "Metadata": null
+                }
+              ],
+              "Attributes": null
+            }
+          ],
+          "ServiceConfig": null,
+          "Attributes": null
+        } (resolver returned new addresses)  (t=+6.445709ms)
+    tlogger.go:133: INFO balancer_wrapper.go:121 [core] [Channel #8] Channel switches to new LB policy "pick_first"  (t=+6.476875ms)
+    tlogger.go:133: INFO clientconn.go:921 [core] [Channel #8 SubChannel #9] Subchannel created  (t=+6.510334ms)
+    tlogger.go:133: INFO clientconn.go:419 [core] [Channel #8] Channel exiting idle mode  (t=+6.52275ms)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #8 SubChannel #9] Subchannel Connectivity change to CONNECTING  (t=+6.554209ms)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #8 SubChannel #9] Subchannel picks a new address "127.0.0.1:60461" to connect  (t=+6.568792ms)
+    tlogger.go:133: INFO syscall_nonlinux.go:39 [core] CPU time info is unavailable on non-linux environments.  (t=+6.803209ms)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #8 SubChannel #9] Subchannel Connectivity change to READY  (t=+6.993625ms)
+    tlogger.go:133: INFO clientconn.go:618 [core] [Channel #8] Channel Connectivity change to READY  (t=+7.010292ms)
+    logging.go:30: respond type.googleapis.com/envoy.config.listener.v3.Listener (requested [my-service-client-side-xds]) version "" with version "1" and resources [my-service-client-side-xds]
+    logging.go:30: open watch 1 for type.googleapis.com/envoy.config.listener.v3.Listener map[my-service-client-side-xds:{}] from nodeID "3f6bfcba-6413-4fdd-9ce0-e7ab24b12a6b", version "1"
+    logging.go:30: respond type.googleapis.com/envoy.config.route.v3.RouteConfiguration (requested [route-my-service-client-side-xds]) version "" with version "1" and resources [route-my-service-client-side-xds]
+    logging.go:30: open watch 2 for type.googleapis.com/envoy.config.route.v3.RouteConfiguration map[route-my-service-client-side-xds:{}] from nodeID "3f6bfcba-6413-4fdd-9ce0-e7ab24b12a6b", version "1"
+    logging.go:30: respond type.googleapis.com/envoy.config.cluster.v3.Cluster (requested [cluster1-my-service-client-side-xds]) version "" with version "1" and resources [cluster1-my-service-client-side-xds]
+    logging.go:30: respond type.googleapis.com/envoy.config.cluster.v3.Cluster (requested [cluster1-my-service-client-side-xds cluster2-my-service-client-side-xds]) version "" with version "1" and resources [cluster1-my-service-client-side-xds cluster2-my-service-client-side-xds]
+    logging.go:30: open watch 3 for type.googleapis.com/envoy.config.cluster.v3.Cluster map[cluster1-my-service-client-side-xds:{} cluster2-my-service-client-side-xds:{}] from nodeID "3f6bfcba-6413-4fdd-9ce0-e7ab24b12a6b", version "1"
+    logging.go:30: respond type.googleapis.com/envoy.config.endpoint.v3.ClusterLoadAssignment (requested [endpoints2-my-service-client-side-xds]) version "" with version "1" and resources [endpoints2-my-service-client-side-xds]
+    logging.go:30: respond type.googleapis.com/envoy.config.endpoint.v3.ClusterLoadAssignment (requested [endpoints2-my-service-client-side-xds endpoints1-my-service-client-side-xds]) version "1" with version "1" and resources [endpoints2-my-service-client-side-xds endpoints1-my-service-client-side-xds]
+    logging.go:30: open watch 4 for type.googleapis.com/envoy.config.endpoint.v3.ClusterLoadAssignment map[endpoints1-my-service-client-side-xds:{} endpoints2-my-service-client-side-xds:{}] from nodeID "3f6bfcba-6413-4fdd-9ce0-e7ab24b12a6b", version "1"
+    tlogger.go:133: INFO resolver_wrapper.go:211 [core] [Channel #7] Resolver state updated: {
+          "Addresses": null,
+          "Endpoints": [],
+          "ServiceConfig": {
+            "Config": {
+              "Config": null,
+              "Methods": {}
+            },
+            "Err": null
+          },
+          "Attributes": {
+            "\u003c%!p(xdsdepmgr.xdsClusterSubscriberKey={})\u003e": "\u003c0x31ab1c241500\u003e",
+            "\u003c%!p(xdsresource.xdsConfigkey={})\u003e": "\u003c0x31ab1c2e17c0\u003e",
+            "\u003c%!p(xdsclient.clientKeyType=grpc.xds.internal.client.Client)\u003e": "\u003c0x31ab1c2c4b40\u003e",
+            "\u003c%!p(resolver.csKeyType=grpc.internal.resolver.configSelector)\u003e": "\u003c0x31ab1c3b6770\u003e"
+          }
+        } (service config updated)  (t=+9.071709ms)
+    tlogger.go:133: INFO balancer_wrapper.go:121 [core] [Channel #7] Channel switches to new LB policy "xds_cluster_manager_experimental"  (t=+9.094167ms)
+    tlogger.go:133: INFO clustermanager.go:58 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Created  (t=+9.1315ms)
+    tlogger.go:133: INFO balancergroup.go:274 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Adding child policy of type "cds_experimental" for child "cluster:cluster1-my-service-client-side-xds"  (t=+9.148584ms)
+    tlogger.go:133: INFO balancergroup.go:102 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Creating child policy of type "cds_experimental" for child "cluster:cluster1-my-service-client-side-xds"  (t=+9.155584ms)
+    tlogger.go:133: INFO cdsbalancer.go:90 [xds] [cds-lb 0x31ab1c6de1c0] Created  (t=+9.162667ms)
+    tlogger.go:133: INFO cdsbalancer.go:160 [xds] [cds-lb 0x31ab1c6de1c0] Received balancer config update: {
+          "LoadBalancingConfig": null,
+          "cluster": "cluster1-my-service-client-side-xds",
+          "isDynamic": false
+        }  (t=+9.183125ms)
+    tlogger.go:133: INFO balancer.go:75 [xds] [priority-lb 0x31ab1c3b68c0] Created  (t=+9.244459ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster1-my-service-client-side-xds, new state: {ConnectivityState:CONNECTING Picker:0x31ab1c389ce0}  (t=+9.355875ms)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster1-my-service-client-side-xds": {ConnectivityState:CONNECTING Picker:0x31ab1c389ce0}  (t=+9.362084ms)
+    tlogger.go:133: INFO balancergroup.go:274 [xds] [priority-lb 0x31ab1c3b68c0] Adding child policy of type "outlier_detection_experimental" for child "priority-0-0"  (t=+9.3665ms)
+    tlogger.go:133: INFO balancergroup.go:102 [xds] [priority-lb 0x31ab1c3b68c0] Creating child policy of type "outlier_detection_experimental" for child "priority-0-0"  (t=+9.372375ms)
+    tlogger.go:133: INFO balancer.go:94 [xds] [outlier-detection-lb 0x31ab1c40f770] Created  (t=+9.378709ms)
+    tlogger.go:133: INFO clusterimpl.go:103 [xds] [xds-cluster-impl-lb 0x31ab1c6f2c80] xDS credentials in use: true  (t=+9.398334ms)
+    tlogger.go:133: INFO clusterimpl.go:105 [xds] [xds-cluster-impl-lb 0x31ab1c6f2c80] Created  (t=+9.4045ms)
+    tlogger.go:133: INFO clusterimpl.go:419 [xds] [xds-cluster-impl-lb 0x31ab1c6f2c80] EDS update {
+          "Drops": null,
+          "Localities": [
+            {
+              "Endpoints": [
+                {
+                  "ResolverEndpoint": {
+                    "Addresses": [
+                      {
+                        "Addr": "localhost:60462",
+                        "ServerName": "",
+                        "Attributes": null,
+                        "BalancerAttributes": null,
+                        "Metadata": null
+                      }
+                    ],
+                    "Attributes": null
+                  },
+                  "HealthStatus": 0,
+                  "Weight": 1,
+                  "Metadata": null
+                }
+              ],
+              "ID": {
+                "Region": "region-1",
+                "Zone": "zone-1",
+                "SubZone": "subzone-1"
+              },
+              "Priority": 0,
+              "Weight": 1,
+              "Metadata": null
+            }
+          ],
+          "Raw": {
+            "type_url": "type.googleapis.com/envoy.config.endpoint.v3.ClusterLoadAssignment",
+            "value": "CiVlbmRwb2ludHMxLW15LXNlcnZpY2UtY2xpZW50LXNpZGUteGRzEj4KHQoIcmVnaW9uLTESBnpvbmUtMRoJc3Viem9uZS0xEhkiAggBChMKEQoPEglsb2NhbGhvc3QYrtgDGgIIAQ=="
+          }
+        }  (t=+9.444375ms)
+    tlogger.go:133: INFO weightedtarget.go:65 [xds] [weighted-target-lb 0x31ab1c636900] Created  (t=+9.50225ms)
+    tlogger.go:133: INFO balancer.go:88 [xds] [wrrlocality-lb 0x31ab1c6a4f60] Created  (t=+9.509375ms)
+    tlogger.go:133: INFO balancergroup.go:274 [xds] [weighted-target-lb 0x31ab1c636900] Adding child policy of type "round_robin" for child "{region=\"region-1\", zone=\"zone-1\", sub_zone=\"subzone-1\"}"  (t=+9.526792ms)
+    tlogger.go:133: INFO balancergroup.go:102 [xds] [weighted-target-lb 0x31ab1c636900] Creating child policy of type "round_robin" for child "{region=\"region-1\", zone=\"zone-1\", sub_zone=\"subzone-1\"}"  (t=+9.534584ms)
+    tlogger.go:133: INFO roundrobin.go:56 [roundrobin] [0x31ab1c6a5740] Created  (t=+9.557125ms)
+    tlogger.go:133: INFO clientconn.go:921 [core] [Channel #7 SubChannel #12] Subchannel created  (t=+9.574125ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c636900] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:CONNECTING Picker:0x31ab1c6387c0}  (t=+9.588584ms)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c636900] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c6387c0,state:CONNECTING,stateToAggregate:CONNECTING]  (t=+9.598792ms)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to CONNECTING  (t=+9.612709ms)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #7 SubChannel #12] Subchannel picks a new address "localhost:60462" to connect  (t=+9.623625ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b68c0] Balancer state update from child priority-0-0, new state: {ConnectivityState:CONNECTING Picker:0x31ab1c78e528}  (t=+9.632167ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster1-my-service-client-side-xds, new state: {ConnectivityState:CONNECTING Picker:0x31ab1c78e528}  (t=+9.640042ms)
+    tlogger.go:133: INFO balancergroup.go:274 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Adding child policy of type "cds_experimental" for child "cluster:cluster2-my-service-client-side-xds"  (t=+9.65175ms)
+    tlogger.go:133: INFO balancergroup.go:102 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Creating child policy of type "cds_experimental" for child "cluster:cluster2-my-service-client-side-xds"  (t=+9.662792ms)
+    tlogger.go:133: INFO cdsbalancer.go:90 [xds] [cds-lb 0x31ab1c6de380] Created  (t=+9.669417ms)
+    tlogger.go:133: INFO cdsbalancer.go:160 [xds] [cds-lb 0x31ab1c6de380] Received balancer config update: {
+          "LoadBalancingConfig": null,
+          "cluster": "cluster2-my-service-client-side-xds",
+          "isDynamic": false
+        }  (t=+9.679625ms)
+    tlogger.go:133: INFO balancer.go:75 [xds] [priority-lb 0x31ab1c3b6f50] Created  (t=+9.699459ms)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster1-my-service-client-side-xds": {ConnectivityState:CONNECTING Picker:0x31ab1c78e528}  (t=+9.723125ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster2-my-service-client-side-xds, new state: {ConnectivityState:CONNECTING Picker:0x31ab1c12d240}  (t=+9.767834ms)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster2-my-service-client-side-xds": {ConnectivityState:CONNECTING Picker:0x31ab1c12d240}  (t=+9.774375ms)
+    tlogger.go:133: INFO balancergroup.go:274 [xds] [priority-lb 0x31ab1c3b6f50] Adding child policy of type "outlier_detection_experimental" for child "priority-0-0"  (t=+9.778917ms)
+    tlogger.go:133: INFO balancergroup.go:102 [xds] [priority-lb 0x31ab1c3b6f50] Creating child policy of type "outlier_detection_experimental" for child "priority-0-0"  (t=+9.783292ms)
+    tlogger.go:133: INFO balancer.go:94 [xds] [outlier-detection-lb 0x31ab1c796870] Created  (t=+9.792042ms)
+    tlogger.go:133: INFO clusterimpl.go:103 [xds] [xds-cluster-impl-lb 0x31ab1c7a0000] xDS credentials in use: true  (t=+9.801792ms)
+    tlogger.go:133: INFO clusterimpl.go:105 [xds] [xds-cluster-impl-lb 0x31ab1c7a0000] Created  (t=+9.807625ms)
+    tlogger.go:133: INFO clusterimpl.go:419 [xds] [xds-cluster-impl-lb 0x31ab1c7a0000] EDS update {
+          "Drops": null,
+          "Localities": [
+            {
+              "Endpoints": [
+                {
+                  "ResolverEndpoint": {
+                    "Addresses": [
+                      {
+                        "Addr": "localhost:60463",
+                        "ServerName": "",
+                        "Attributes": null,
+                        "BalancerAttributes": null,
+                        "Metadata": null
+                      }
+                    ],
+                    "Attributes": null
+                  },
+                  "HealthStatus": 0,
+                  "Weight": 1,
+                  "Metadata": null
+                }
+              ],
+              "ID": {
+                "Region": "region-1",
+                "Zone": "zone-1",
+                "SubZone": "subzone-1"
+              },
+              "Priority": 0,
+              "Weight": 1,
+              "Metadata": null
+            }
+          ],
+          "Raw": {
+            "type_url": "type.googleapis.com/envoy.config.endpoint.v3.ClusterLoadAssignment",
+            "value": "CiVlbmRwb2ludHMyLW15LXNlcnZpY2UtY2xpZW50LXNpZGUteGRzEj4KHQoIcmVnaW9uLTESBnpvbmUtMRoJc3Viem9uZS0xEhkiAggBChMKEQoPEglsb2NhbGhvc3QYr9gDGgIIAQ=="
+          }
+        }  (t=+9.830959ms)
+    tlogger.go:133: INFO weightedtarget.go:65 [xds] [weighted-target-lb 0x31ab1c6370e0] Created  (t=+9.86875ms)
+    tlogger.go:133: INFO balancer.go:88 [xds] [wrrlocality-lb 0x31ab1c798ba0] Created  (t=+9.875584ms)
+    tlogger.go:133: INFO balancergroup.go:274 [xds] [weighted-target-lb 0x31ab1c6370e0] Adding child policy of type "round_robin" for child "{region=\"region-1\", zone=\"zone-1\", sub_zone=\"subzone-1\"}"  (t=+9.889917ms)
+    tlogger.go:133: INFO balancergroup.go:102 [xds] [weighted-target-lb 0x31ab1c6370e0] Creating child policy of type "round_robin" for child "{region=\"region-1\", zone=\"zone-1\", sub_zone=\"subzone-1\"}"  (t=+9.896792ms)
+    tlogger.go:133: INFO roundrobin.go:56 [roundrobin] [0x31ab1c798ed0] Created  (t=+9.903584ms)
+    tlogger.go:133: INFO clientconn.go:921 [core] [Channel #7 SubChannel #13] Subchannel created  (t=+9.918834ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c6370e0] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:CONNECTING Picker:0x31ab1c638a40}  (t=+9.930834ms)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c6370e0] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c638a40,state:CONNECTING,stateToAggregate:CONNECTING]  (t=+9.9395ms)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to CONNECTING  (t=+9.951584ms)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #7 SubChannel #13] Subchannel picks a new address "localhost:60463" to connect  (t=+9.960959ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b6f50] Balancer state update from child priority-0-0, new state: {ConnectivityState:CONNECTING Picker:0x31ab1c78ef60}  (t=+9.969334ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster2-my-service-client-side-xds, new state: {ConnectivityState:CONNECTING Picker:0x31ab1c78ef60}  (t=+9.976084ms)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster2-my-service-client-side-xds": {ConnectivityState:CONNECTING Picker:0x31ab1c78ef60}  (t=+9.981792ms)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1c78e528,state:CONNECTING,stateToAggregate:CONNECTING cluster:cluster2-my-service-client-side-xds:picker:0x31ab1c78ef60,state:CONNECTING,stateToAggregate:CONNECTING]  (t=+9.988584ms)
+    tlogger.go:129: WARNING clientconn.go:1525 [core] [Channel #7 SubChannel #13] grpc: addrConn.createTransport failed to connect to {Addr: "localhost:60463", ServerName: "my-service-client-side-xds", Attributes: {"<%!p(xds.handshakeAttrKey={})>": "<0x31ab1c182348>" , "<%!p(xds.handshakeClusterNameKey={})>": "cluster2-my-service-client-side-xds" }, BalancerAttributes: {"<%!p(hierarchy.pathKeyType=grpc.internal.address.hierarchical_path)>": "<0x31ab1c636e00>" , "<%!p(xds.localityKeyType=grpc.xds.internal.address.locality)>": "<%!p(clients.Locality={region-1 zone-1 subzone-1})>" , "<%!p(wrrlocality.attributeKey={})>": "Locality Weight: 1" , "<%!p(weight.attributeKey={})>": "Weight: 2147483648" }}. Err: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+16.512042ms)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+16.527792ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c6370e0] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c3eb600}  (t=+16.542209ms)
+    tlogger.go:133: INFO server.go:1026 [core] [Server #5] grpc: Server.Serve failed to create ServerTransport: connection error: desc = "ServerHandshake(\"127.0.0.1:60470\") failed: remote error: tls: bad certificate"  (t=+16.561917ms)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c6370e0] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c3eb600,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+16.586ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b6f50] Balancer state update from child priority-0-0, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c3686d8}  (t=+16.595042ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster2-my-service-client-side-xds, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c3686d8}  (t=+16.6015ms)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster2-my-service-client-side-xds": {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c3686d8}  (t=+16.606834ms)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1c78e528,state:CONNECTING,stateToAggregate:CONNECTING cluster:cluster2-my-service-client-side-xds:picker:0x31ab1c3686d8,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+16.613042ms)
+    tlogger.go:133: INFO server.go:1026 [core] [Server #3] grpc: Server.Serve failed to create ServerTransport: connection error: desc = "ServerHandshake(\"127.0.0.1:60468\") failed: tls: client didn't provide a certificate"  (t=+16.709667ms)
+    tlogger.go:129: WARNING clientconn.go:1525 [core] [Channel #7 SubChannel #12] grpc: addrConn.createTransport failed to connect to {Addr: "localhost:60462", ServerName: "my-service-client-side-xds", Attributes: {"<%!p(xds.handshakeClusterNameKey={})>": "cluster1-my-service-client-side-xds" , "<%!p(xds.handshakeAttrKey={})>": "<0x31ab1c182208>" }, BalancerAttributes: {"<%!p(xds.localityKeyType=grpc.xds.internal.address.locality)>": "<%!p(clients.Locality={region-1 zone-1 subzone-1})>" , "<%!p(wrrlocality.attributeKey={})>": "Locality Weight: 1" , "<%!p(weight.attributeKey={})>": "Weight: 2147483648" , "<%!p(hierarchy.pathKeyType=grpc.internal.address.hierarchical_path)>": "<0x31ab1c636600>" }}. Err: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+16.799ms)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+16.814709ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c636900] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c66eec0}  (t=+16.834167ms)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c636900] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c66eec0,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+16.852292ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b68c0] Balancer state update from child priority-0-0, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1ca08018}  (t=+16.865375ms)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster1-my-service-client-side-xds, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1ca08018}  (t=+16.871417ms)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster1-my-service-client-side-xds": {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1ca08018}  (t=+16.879792ms)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1ca08018,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE cluster:cluster2-my-service-client-side-xds:picker:0x31ab1c3686d8,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+16.889125ms)
+    tlogger.go:133: INFO clientconn.go:618 [core] [Channel #7] Channel Connectivity change to TRANSIENT_FAILURE  (t=+16.904ms)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to IDLE, last error: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+1.017698417s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+1.01782925s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to CONNECTING  (t=+1.017898709s)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #7 SubChannel #12] Subchannel picks a new address "localhost:60462" to connect  (t=+1.017937209s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to CONNECTING  (t=+1.017976792s)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #7 SubChannel #13] Subchannel picks a new address "localhost:60463" to connect  (t=+1.018012334s)
+    tlogger.go:129: WARNING clientconn.go:1525 [core] [Channel #7 SubChannel #13] grpc: addrConn.createTransport failed to connect to {Addr: "localhost:60463", ServerName: "my-service-client-side-xds", Attributes: {"<%!p(xds.handshakeClusterNameKey={})>": "cluster2-my-service-client-side-xds" , "<%!p(xds.handshakeAttrKey={})>": "<0x31ab1c182348>" }, BalancerAttributes: {"<%!p(hierarchy.pathKeyType=grpc.internal.address.hierarchical_path)>": "<0x31ab1c636e00>" , "<%!p(xds.localityKeyType=grpc.xds.internal.address.locality)>": "<%!p(clients.Locality={region-1 zone-1 subzone-1})>" , "<%!p(wrrlocality.attributeKey={})>": "Locality Weight: 1" , "<%!p(weight.attributeKey={})>": "Weight: 2147483648" }}. Err: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+1.036206709s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+1.03626725s)
+    tlogger.go:133: INFO server.go:1026 [core] [Server #5] grpc: Server.Serve failed to create ServerTransport: connection error: desc = "ServerHandshake(\"127.0.0.1:60473\") failed: remote error: tls: bad certificate"  (t=+1.036320167s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c6370e0] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c66e6c0}  (t=+1.036362542s)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c6370e0] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c66e6c0,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+1.036448084s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b6f50] Balancer state update from child priority-0-0, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c78e060}  (t=+1.036484834s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster2-my-service-client-side-xds, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c78e060}  (t=+1.036518125s)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster2-my-service-client-side-xds": {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c78e060}  (t=+1.036538917s)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1ca08018,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE cluster:cluster2-my-service-client-side-xds:picker:0x31ab1c78e060,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+1.036561667s)
+    tlogger.go:133: INFO server.go:1026 [core] [Server #3] grpc: Server.Serve failed to create ServerTransport: connection error: desc = "ServerHandshake(\"127.0.0.1:60474\") failed: tls: client didn't provide a certificate"  (t=+1.049470625s)
+    tlogger.go:129: WARNING clientconn.go:1525 [core] [Channel #7 SubChannel #12] grpc: addrConn.createTransport failed to connect to {Addr: "localhost:60462", ServerName: "my-service-client-side-xds", Attributes: {"<%!p(xds.handshakeClusterNameKey={})>": "cluster1-my-service-client-side-xds" , "<%!p(xds.handshakeAttrKey={})>": "<0x31ab1c182208>" }, BalancerAttributes: {"<%!p(hierarchy.pathKeyType=grpc.internal.address.hierarchical_path)>": "<0x31ab1c636600>" , "<%!p(xds.localityKeyType=grpc.xds.internal.address.locality)>": "<%!p(clients.Locality={region-1 zone-1 subzone-1})>" , "<%!p(wrrlocality.attributeKey={})>": "Locality Weight: 1" , "<%!p(weight.attributeKey={})>": "Weight: 2147483648" }}. Err: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+1.049633875s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+1.049661334s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c636900] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c9260c0}  (t=+1.049697625s)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c636900] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c9260c0,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+1.049724667s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b68c0] Balancer state update from child priority-0-0, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c78e258}  (t=+1.049742209s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster1-my-service-client-side-xds, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c78e258}  (t=+1.049755667s)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster1-my-service-client-side-xds": {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c78e258}  (t=+1.049767542s)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1c78e258,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE cluster:cluster2-my-service-client-side-xds:picker:0x31ab1c78e060,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+1.0497795s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+2.423247209s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to CONNECTING  (t=+2.423431667s)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #7 SubChannel #13] Subchannel picks a new address "localhost:60463" to connect  (t=+2.423516667s)
+    tlogger.go:129: WARNING clientconn.go:1525 [core] [Channel #7 SubChannel #13] grpc: addrConn.createTransport failed to connect to {Addr: "localhost:60463", ServerName: "my-service-client-side-xds", Attributes: {"<%!p(xds.handshakeClusterNameKey={})>": "cluster2-my-service-client-side-xds" , "<%!p(xds.handshakeAttrKey={})>": "<0x31ab1c182348>" }, BalancerAttributes: {"<%!p(hierarchy.pathKeyType=grpc.internal.address.hierarchical_path)>": "<0x31ab1c636e00>" , "<%!p(xds.localityKeyType=grpc.xds.internal.address.locality)>": "<%!p(clients.Locality={region-1 zone-1 subzone-1})>" , "<%!p(wrrlocality.attributeKey={})>": "Locality Weight: 1" , "<%!p(weight.attributeKey={})>": "Weight: 2147483648" }}. Err: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+2.441807125s)
+    tlogger.go:133: INFO server.go:1026 [core] [Server #5] grpc: Server.Serve failed to create ServerTransport: connection error: desc = "ServerHandshake(\"127.0.0.1:60476\") failed: remote error: tls: bad certificate"  (t=+2.441873959s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+2.441905292s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c6370e0] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c0e93c0}  (t=+2.441965125s)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c6370e0] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c0e93c0,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+2.442004542s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b6f50] Balancer state update from child priority-0-0, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c7685e8}  (t=+2.442028417s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster2-my-service-client-side-xds, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c7685e8}  (t=+2.442053834s)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster2-my-service-client-side-xds": {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c7685e8}  (t=+2.442070792s)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1c78e258,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE cluster:cluster2-my-service-client-side-xds:picker:0x31ab1c7685e8,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+2.442093667s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to IDLE, last error: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+2.684811959s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to CONNECTING  (t=+2.684999084s)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #7 SubChannel #12] Subchannel picks a new address "localhost:60462" to connect  (t=+2.685033792s)
+    tlogger.go:133: INFO server.go:1026 [core] [Server #3] grpc: Server.Serve failed to create ServerTransport: connection error: desc = "ServerHandshake(\"127.0.0.1:60478\") failed: tls: client didn't provide a certificate"  (t=+2.703129084s)
+    tlogger.go:129: WARNING clientconn.go:1525 [core] [Channel #7 SubChannel #12] grpc: addrConn.createTransport failed to connect to {Addr: "localhost:60462", ServerName: "my-service-client-side-xds", Attributes: {"<%!p(xds.handshakeClusterNameKey={})>": "cluster1-my-service-client-side-xds" , "<%!p(xds.handshakeAttrKey={})>": "<0x31ab1c182208>" }, BalancerAttributes: {"<%!p(weight.attributeKey={})>": "Weight: 2147483648" , "<%!p(hierarchy.pathKeyType=grpc.internal.address.hierarchical_path)>": "<0x31ab1c636600>" , "<%!p(xds.localityKeyType=grpc.xds.internal.address.locality)>": "<%!p(clients.Locality={region-1 zone-1 subzone-1})>" , "<%!p(wrrlocality.attributeKey={})>": "Locality Weight: 1" }}. Err: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+2.703312209s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+2.703339292s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c636900] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c0e96c0}  (t=+2.703382459s)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c636900] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c0e96c0,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+2.703410917s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b68c0] Balancer state update from child priority-0-0, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c768930}  (t=+2.703427667s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster1-my-service-client-side-xds, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c768930}  (t=+2.703442584s)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster1-my-service-client-side-xds": {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c768930}  (t=+2.703454667s)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1c768930,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE cluster:cluster2-my-service-client-side-xds:picker:0x31ab1c7685e8,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+2.703465375s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+4.767592167s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to CONNECTING  (t=+4.767759667s)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #7 SubChannel #13] Subchannel picks a new address "localhost:60463" to connect  (t=+4.7677895s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to IDLE, last error: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+4.784350834s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to CONNECTING  (t=+4.784461584s)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #7 SubChannel #12] Subchannel picks a new address "localhost:60462" to connect  (t=+4.784483084s)
+    tlogger.go:133: INFO server.go:1026 [core] [Server #5] grpc: Server.Serve failed to create ServerTransport: connection error: desc = "ServerHandshake(\"127.0.0.1:60480\") failed: remote error: tls: bad certificate"  (t=+4.785519584s)
+    tlogger.go:129: WARNING clientconn.go:1525 [core] [Channel #7 SubChannel #13] grpc: addrConn.createTransport failed to connect to {Addr: "localhost:60463", ServerName: "my-service-client-side-xds", Attributes: {"<%!p(xds.handshakeAttrKey={})>": "<0x31ab1c182348>" , "<%!p(xds.handshakeClusterNameKey={})>": "cluster2-my-service-client-side-xds" }, BalancerAttributes: {"<%!p(wrrlocality.attributeKey={})>": "Locality Weight: 1" , "<%!p(weight.attributeKey={})>": "Weight: 2147483648" , "<%!p(hierarchy.pathKeyType=grpc.internal.address.hierarchical_path)>": "<0x31ab1c636e00>" , "<%!p(xds.localityKeyType=grpc.xds.internal.address.locality)>": "<%!p(clients.Locality={region-1 zone-1 subzone-1})>" }}. Err: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+4.785627417s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+4.785681292s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c6370e0] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c926780}  (t=+4.785744584s)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c6370e0] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c926780,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+4.785796709s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b6f50] Balancer state update from child priority-0-0, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c78e9c0}  (t=+4.785883292s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster2-my-service-client-side-xds, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c78e9c0}  (t=+4.785916875s)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster2-my-service-client-side-xds": {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c78e9c0}  (t=+4.785936459s)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1c768930,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE cluster:cluster2-my-service-client-side-xds:picker:0x31ab1c78e9c0,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+4.785955125s)
+    tlogger.go:133: INFO server.go:1026 [core] [Server #3] grpc: Server.Serve failed to create ServerTransport: connection error: desc = "ServerHandshake(\"127.0.0.1:60482\") failed: tls: client didn't provide a certificate"  (t=+4.794804292s)
+    tlogger.go:129: WARNING clientconn.go:1525 [core] [Channel #7 SubChannel #12] grpc: addrConn.createTransport failed to connect to {Addr: "localhost:60462", ServerName: "my-service-client-side-xds", Attributes: {"<%!p(xds.handshakeClusterNameKey={})>": "cluster1-my-service-client-side-xds" , "<%!p(xds.handshakeAttrKey={})>": "<0x31ab1c182208>" }, BalancerAttributes: {"<%!p(wrrlocality.attributeKey={})>": "Locality Weight: 1" , "<%!p(weight.attributeKey={})>": "Weight: 2147483648" , "<%!p(hierarchy.pathKeyType=grpc.internal.address.hierarchical_path)>": "<0x31ab1c636600>" , "<%!p(xds.localityKeyType=grpc.xds.internal.address.locality)>": "<%!p(clients.Locality={region-1 zone-1 subzone-1})>" }}. Err: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+4.794954459s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+4.794975584s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c636900] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c0e9800}  (t=+4.794998292s)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c636900] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c0e9800,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+4.795013125s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b68c0] Balancer state update from child priority-0-0, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c768be8}  (t=+4.795025167s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster1-my-service-client-side-xds, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c768be8}  (t=+4.7950365s)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster1-my-service-client-side-xds": {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c768be8}  (t=+4.795048084s)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1c768be8,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE cluster:cluster2-my-service-client-side-xds:picker:0x31ab1c78e9c0,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+4.7950565s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to IDLE, last error: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+8.700189167s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to CONNECTING  (t=+8.700411167s)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #7 SubChannel #13] Subchannel picks a new address "localhost:60463" to connect  (t=+8.700452417s)
+    tlogger.go:129: WARNING clientconn.go:1525 [core] [Channel #7 SubChannel #13] grpc: addrConn.createTransport failed to connect to {Addr: "localhost:60463", ServerName: "my-service-client-side-xds", Attributes: {"<%!p(xds.handshakeClusterNameKey={})>": "cluster2-my-service-client-side-xds" , "<%!p(xds.handshakeAttrKey={})>": "<0x31ab1c182348>" }, BalancerAttributes: {"<%!p(hierarchy.pathKeyType=grpc.internal.address.hierarchical_path)>": "<0x31ab1c636e00>" , "<%!p(xds.localityKeyType=grpc.xds.internal.address.locality)>": "<%!p(clients.Locality={region-1 zone-1 subzone-1})>" , "<%!p(wrrlocality.attributeKey={})>": "Locality Weight: 1" , "<%!p(weight.attributeKey={})>": "Weight: 2147483648" }}. Err: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+8.717842s)
+    tlogger.go:133: INFO server.go:1026 [core] [Server #5] grpc: Server.Serve failed to create ServerTransport: connection error: desc = "ServerHandshake(\"127.0.0.1:60490\") failed: remote error: tls: bad certificate"  (t=+8.717897167s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "transport: authentication handshake failed: xds: received SANs {DNSNames: [*.test.example.com], EmailAddresses: [], IPAddresses: [], URIs: []} do not match any of the accepted SANs"  (t=+8.717925292s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c6370e0] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c66e7c0}  (t=+8.71797825s)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c6370e0] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c66e7c0,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+8.718008875s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b6f50] Balancer state update from child priority-0-0, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1ca084b0}  (t=+8.718027709s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster2-my-service-client-side-xds, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1ca084b0}  (t=+8.718043792s)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster2-my-service-client-side-xds": {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1ca084b0}  (t=+8.7180575s)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1c768be8,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE cluster:cluster2-my-service-client-side-xds:picker:0x31ab1ca084b0,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+8.718070875s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to IDLE, last error: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+8.731626459s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to CONNECTING  (t=+8.731767709s)
+    tlogger.go:133: INFO clientconn.go:1463 [core] [Channel #7 SubChannel #12] Subchannel picks a new address "localhost:60462" to connect  (t=+8.731800917s)
+    tlogger.go:133: INFO server.go:1026 [core] [Server #3] grpc: Server.Serve failed to create ServerTransport: connection error: desc = "ServerHandshake(\"127.0.0.1:60492\") failed: tls: client didn't provide a certificate"  (t=+8.744124584s)
+    tlogger.go:129: WARNING clientconn.go:1525 [core] [Channel #7 SubChannel #12] grpc: addrConn.createTransport failed to connect to {Addr: "localhost:60462", ServerName: "my-service-client-side-xds", Attributes: {"<%!p(xds.handshakeClusterNameKey={})>": "cluster1-my-service-client-side-xds" , "<%!p(xds.handshakeAttrKey={})>": "<0x31ab1c182208>" }, BalancerAttributes: {"<%!p(hierarchy.pathKeyType=grpc.internal.address.hierarchical_path)>": "<0x31ab1c636600>" , "<%!p(xds.localityKeyType=grpc.xds.internal.address.locality)>": "<%!p(clients.Locality={region-1 zone-1 subzone-1})>" , "<%!p(wrrlocality.attributeKey={})>": "Locality Weight: 1" , "<%!p(weight.attributeKey={})>": "Weight: 2147483648" }}. Err: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+8.744264167s)
+    tlogger.go:133: INFO clientconn.go:1297 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to TRANSIENT_FAILURE, last error: connection error: desc = "error reading server preface: remote error: tls: certificate required"  (t=+8.744299167s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [weighted-target-lb 0x31ab1c636900] Balancer state update from child {region="region-1", zone="zone-1", sub_zone="subzone-1"}, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c926f40}  (t=+8.744333667s)
+    tlogger.go:133: INFO aggregator.go:253 [xds] [weighted-target-lb 0x31ab1c636900] Child pickers with config: map[{region="region-1", zone="zone-1", sub_zone="subzone-1"}:weight:1,picker:0x31ab1c926f40,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+8.744381334s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [priority-lb 0x31ab1c3b68c0] Balancer state update from child priority-0-0, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c0d6198}  (t=+8.74456925s)
+    tlogger.go:133: INFO balancergroup.go:510 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Balancer state update from child cluster:cluster1-my-service-client-side-xds, new state: {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c0d6198}  (t=+8.7446135s)
+    tlogger.go:133: INFO balancerstateaggregator.go:147 [xds] [xds-cluster-manager-lb 0x31ab1c636460] State update from sub-balancer "cluster:cluster1-my-service-client-side-xds": {ConnectivityState:TRANSIENT_FAILURE Picker:0x31ab1c0d6198}  (t=+8.744628667s)
+    tlogger.go:133: INFO balancerstateaggregator.go:191 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Child pickers: map[cluster:cluster1-my-service-client-side-xds:picker:0x31ab1c0d6198,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE cluster:cluster2-my-service-client-side-xds:picker:0x31ab1ca084b0,state:TRANSIENT_FAILURE,stateToAggregate:TRANSIENT_FAILURE]  (t=+8.744651417s)
+    xds_client_sni_test.go:452: EmptyCall() failed: rpc error: code = DeadlineExceeded desc = latest balancer error: connection error: desc = "error reading server preface: remote error: tls: certificate required"
+    tlogger.go:133: INFO clientconn.go:618 [core] [Channel #7] Channel Connectivity change to SHUTDOWN  (t=+10.007048042s)
+    tlogger.go:133: INFO resolver_wrapper.go:112 [core] [Channel #7] Closing the name resolver  (t=+10.007081709s)
+    tlogger.go:133: INFO balancer_wrapper.go:159 [core] [Channel #7] ccBalancerWrapper: closing  (t=+10.007172459s)
+    tlogger.go:133: INFO clusterimpl.go:521 [xds] [xds-cluster-impl-lb 0x31ab1c6f2c80] Shutdown  (t=+10.007365834s)
+    tlogger.go:133: INFO balancergroup.go:341 [xds] [priority-lb 0x31ab1c3b68c0] Removing child policy for child "priority-0-0"  (t=+10.007465709s)
+    tlogger.go:133: INFO cdsbalancer.go:416 [xds] [cds-lb 0x31ab1c6de1c0] Shutdown  (t=+10.007492917s)
+    tlogger.go:129: WARNING ads_stream.go:402 [xds] [xds-client 0x31ab1c3403f0] [xds-channel 0x31ab1c2f6af0] [ads-stream 0x31ab1c2f2460] Sending ADS request for type "type.googleapis.com/envoy.config.listener.v3.Listener", resources: [], version: "1", nonce: "1" failed: EOF  (t=+10.007530292s)
+    tlogger.go:129: WARNING ads_stream.go:441 [xds] [xds-client 0x31ab1c3403f0] [xds-channel 0x31ab1c2f6af0] [ads-stream 0x31ab1c2f2460] ADS stream closed: rpc error: code = Canceled desc = context canceled  (t=+10.007622959s)
+    tlogger.go:133: INFO clusterimpl.go:521 [xds] [xds-cluster-impl-lb 0x31ab1c7a0000] Shutdown  (t=+10.007648709s)
+    tlogger.go:133: INFO balancergroup.go:341 [xds] [priority-lb 0x31ab1c3b6f50] Removing child policy for child "priority-0-0"  (t=+10.007724167s)
+    tlogger.go:133: INFO cdsbalancer.go:416 [xds] [cds-lb 0x31ab1c6de380] Shutdown  (t=+10.007808375s)
+    tlogger.go:133: INFO clustermanager.go:192 [xds] [xds-cluster-manager-lb 0x31ab1c636460] Shutdown  (t=+10.00782875s)
+    tlogger.go:133: INFO ads_stream.go:160 [xds] [xds-client 0x31ab1c3403f0] [xds-channel 0x31ab1c2f6af0] [ads-stream 0x31ab1c2f2460] Shutdown ADS stream  (t=+10.007842792s)
+    tlogger.go:133: INFO clientconn.go:618 [core] [Channel #8] Channel Connectivity change to SHUTDOWN  (t=+10.007886709s)
+    tlogger.go:133: INFO resolver_wrapper.go:112 [core] [Channel #8] Closing the name resolver  (t=+10.007903292s)
+    tlogger.go:133: INFO balancer_wrapper.go:159 [core] [Channel #8] ccBalancerWrapper: closing  (t=+10.007928584s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #8 SubChannel #9] Subchannel Connectivity change to SHUTDOWN  (t=+10.007995625s)
+    tlogger.go:133: INFO clientconn.go:1672 [core] [Channel #8 SubChannel #9] Subchannel deleted  (t=+10.008019542s)
+    tlogger.go:133: INFO clientconn.go:1230 [core] [Channel #8] Channel deleted  (t=+10.008284167s)
+    tlogger.go:133: INFO channel.go:142 [xds] [xds-client 0x31ab1c3403f0] [xds-channel 0x31ab1c2f6af0] Shutdown  (t=+10.008389167s)
+    tlogger.go:133: INFO xdsclient.go:200 [xds] [xds-client 0x31ab1c3403f0] Shutdown  (t=+10.008441125s)
+    tlogger.go:133: INFO xds_resolver.go:281 [xds] [xds-resolver 0x31ab1c340480] Shutdown  (t=+10.008470459s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #13] Subchannel Connectivity change to SHUTDOWN  (t=+10.008501542s)
+    tlogger.go:133: INFO clientconn.go:1672 [core] [Channel #7 SubChannel #13] Subchannel deleted  (t=+10.008519875s)
+    tlogger.go:133: INFO clientconn.go:1295 [core] [Channel #7 SubChannel #12] Subchannel Connectivity change to SHUTDOWN  (t=+10.008531875s)
+    tlogger.go:133: INFO clientconn.go:1672 [core] [Channel #7 SubChannel #12] Subchannel deleted  (t=+10.008551584s)
+    tlogger.go:133: INFO clientconn.go:1230 [core] [Channel #7] Channel deleted  (t=+10.008566875s)
+    tlogger.go:133: INFO server.go:849 [core] [Server #5 ListenSocket #6] ListenSocket deleted  (t=+10.008675709s)
+    tlogger.go:133: INFO server.go:849 [core] [Server #3 ListenSocket #4] ListenSocket deleted  (t=+10.008765709s)
+    tlogger.go:133: INFO server.go:849 [core] [Server #1 ListenSocket #2] ListenSocket deleted  (t=+10.008853375s)
+--- FAIL: Test (10.01s)
+    --- FAIL: Test/ClientSideXDS_FallbackSANMatchers (10.01s)
+FAIL
+FAIL	google.golang.org/grpc/test/xds	10.532s
+FAIL

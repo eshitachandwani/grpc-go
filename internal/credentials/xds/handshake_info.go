@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc/credentials/tls/certprovider"
 	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/internal/credentials/spiffe"
+	"google.golang.org/grpc/internal/envconfig"
 	"google.golang.org/grpc/internal/xds/matcher"
 	"google.golang.org/grpc/resolver"
 )
@@ -55,7 +56,9 @@ func (hi *HandshakeInfo) Equal(other *HandshakeInfo) bool {
 	if hi.rootProvider != other.rootProvider ||
 		hi.identityProvider != other.identityProvider ||
 		hi.requireClientCert != other.requireClientCert ||
-		len(hi.sanMatchers) != len(other.sanMatchers) {
+		len(hi.sanMatchers) != len(other.sanMatchers) ||
+		(hi.sni != other.sni) ||
+		(hi.autoSniSanValidation != other.autoSniSanValidation) {
 		return false
 	}
 	for i := range hi.sanMatchers {
@@ -63,6 +66,7 @@ func (hi *HandshakeInfo) Equal(other *HandshakeInfo) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -86,20 +90,24 @@ func GetHandshakeInfo(attr *attributes.Attributes) *unsafe.Pointer {
 type HandshakeInfo struct {
 	// All fields written at init time and read only after that, so no
 	// synchronization needed.
-	rootProvider      certprovider.Provider
-	identityProvider  certprovider.Provider
-	sanMatchers       []matcher.StringMatcher // Only on the client side.
-	requireClientCert bool                    // Only on server side.
+	rootProvider         certprovider.Provider
+	identityProvider     certprovider.Provider
+	sanMatchers          []matcher.StringMatcher // Only on the client side.
+	requireClientCert    bool                    // Only on server side.
+	sni                  string                  // Only on the client side, and is used as the SNI for outgoing connections if set.
+	autoSniSanValidation bool                    // Only on the client side,.
 }
 
 // NewHandshakeInfo returns a new handshake info configured with the provided
 // options.
-func NewHandshakeInfo(rootProvider certprovider.Provider, identityProvider certprovider.Provider, sanMatchers []matcher.StringMatcher, requireClientCert bool) *HandshakeInfo {
+func NewHandshakeInfo(rootProvider certprovider.Provider, identityProvider certprovider.Provider, sanMatchers []matcher.StringMatcher, requireClientCert bool, sni string, autoSNISANValidation bool) *HandshakeInfo {
 	return &HandshakeInfo{
-		rootProvider:      rootProvider,
-		identityProvider:  identityProvider,
-		sanMatchers:       sanMatchers,
-		requireClientCert: requireClientCert,
+		rootProvider:         rootProvider,
+		identityProvider:     identityProvider,
+		sanMatchers:          sanMatchers,
+		requireClientCert:    requireClientCert,
+		sni:                  sni,
+		autoSniSanValidation: autoSNISANValidation,
 	}
 }
 
@@ -144,6 +152,11 @@ func (hi *HandshakeInfo) ClientSideTLSConfig(ctx context.Context) (*tls.Config, 
 	if err != nil {
 		return nil, fmt.Errorf("xds: fetching trusted roots from CertificateProvider failed: %v", err)
 	}
+
+	if envconfig.XDSSNIEnabled && hi.sni != "" {
+		cfg.ServerName = hi.sni
+	}
+
 	cfg.RootCAs = km.Roots
 	cfg.VerifyPeerCertificate = hi.buildVerifyFunc(km, true)
 
@@ -200,6 +213,15 @@ func (hi *HandshakeInfo) buildVerifyFunc(km *certprovider.KeyMaterial, isClient 
 		if _, err := certs[0].Verify(opts); err != nil {
 			return err
 		}
+
+		if envconfig.XDSSNIEnabled && hi.autoSniSanValidation && hi.sni != "" {
+			// match SAN with SNI
+			if !verifySNIWithSAN(hi.sni, certs[0]) {
+				return fmt.Errorf("xds: received DNS SANs: %v do not match the SNI: %v", certs[0].DNSNames, hi.sni)
+			}
+			return nil
+		}
+
 		// The SANs sent by the MeshCA are encoded as SPIFFE IDs. We need to
 		// only look at the SANs on the leaf cert.
 		if cert := certs[0]; !hi.MatchingSANExists(cert) {
@@ -209,6 +231,14 @@ func (hi *HandshakeInfo) buildVerifyFunc(km *certprovider.KeyMaterial, isClient 
 		}
 		return nil
 	}
+}
+func verifySNIWithSAN(sni string, cert *x509.Certificate) bool {
+	for _, san := range cert.DNSNames {
+		if dnsMatch(sni, san) {
+			return true
+		}
+	}
+	return false
 }
 
 // ServerSideTLSConfig constructs a tls.Config to be used in a server-side
