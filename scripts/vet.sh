@@ -75,6 +75,24 @@ not git grep -n $'\t' -- '*.md'
 # - Ensure all xds proto imports are renamed to *pb or *grpc.
 git grep '"github.com/envoyproxy/go-control-plane/envoy' -- '*.go' ':(exclude)*.pb.go' | not grep -v 'pb "\|grpc "'
 
+
+echo "Checking for multiple package comments..."
+
+# Find all Go files, grep for package comments, and track the files
+package_comment_files=$(grep -r -l "^// Package" --include="*.go")
+
+# Count how many files have package comments
+package_comment_count=$(echo "$package_comment_files" | wc -l)
+
+# If more than one file has a package comment, fail the check
+if [ "$package_comment_count" -gt 1 ]; then
+  echo "Error: More than one file contains a package comment:"
+  echo "$package_comment_files"
+  exit 1
+else
+  echo "Package comment check passed."
+fi
+
 # - Ensure all context usages are done with timeout.
 # Context tests under benchmark are excluded as they are testing the performance of context.Background() and context.TODO().
 git grep -e 'context.Background()' --or -e 'context.TODO()' -- "*_test.go" | grep -v "benchmark/primitives/context_test.go" | grep -v 'context.WithTimeout(' | not grep -v 'context.WithCancel('
