@@ -33,10 +33,10 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	v3mutationrulespb "github.com/envoyproxy/go-control-plane/envoy/config/common/mutation_rules/v3"
 	v3corepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	v3procfilterpb "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	v3matcherpb "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
-	mutation_rulesv3 "github.com/envoyproxy/go-control-plane/envoy/config/common/mutation_rules/v3"
 )
 
 const testBaseURI = "base-uri"
@@ -154,7 +154,7 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 						},
 					},
 				},
-				MutationRules: &mutation_rulesv3.HeaderMutationRules{
+				MutationRules: &v3mutationrulespb.HeaderMutationRules{
 					AllowExpression:    &v3matcherpb.RegexMatcher{Regex: "allow-.*"},
 					DisallowExpression: &v3matcherpb.RegexMatcher{Regex: "disallow-.*"},
 					DisallowAll:        wrapperspb.Bool(true),
@@ -227,7 +227,7 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 						}},
 					},
 				},
-				MutationRules: &mutation_rulesv3.HeaderMutationRules{
+				MutationRules: &v3mutationrulespb.HeaderMutationRules{
 					AllowExpression:    &v3matcherpb.RegexMatcher{Regex: "allow-.*"},
 					DisallowExpression: &v3matcherpb.RegexMatcher{Regex: "disallow-.*"},
 					DisallowAll:        wrapperspb.Bool(true),
