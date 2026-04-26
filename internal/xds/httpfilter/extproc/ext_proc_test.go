@@ -113,11 +113,14 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 					targetURI:          testBaseURI,
 					channelCredentials: insecure.NewCredentials(),
 				},
-				deferredCloseTimeout: defaultDeferredCloseTimeout,
 				processingMode: processingModes{
-					requestHeaderMode:  modeSend,
-					responseHeaderMode: modeSend,
+					requestHeaderMode:   modeSend,
+					responseHeaderMode:  modeSend,
+					requestBodyMode:     modeSkip,
+					responseBodyMode:    modeSkip,
+					responseTrailerMode: modeSkip,
 				},
+				deferredCloseTimeout: defaultDeferredCloseTimeout,
 			},
 		},
 		{
@@ -162,9 +165,9 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 				},
 			}},
 			wantConfig: &interceptorConfig{
-				failureModeAllow:         true,
-				requestAttributes:        []string{"attr1"},
-				responseAttributes:       []string{"attr2"},
+				failureModeAllow:   true,
+				requestAttributes:  []string{"attr1"},
+				responseAttributes: []string{"attr2"},
 				mutationRules: headerMutationRules{
 					allowExpr:       regexp.MustCompile("allow-.*"),
 					disallowExpr:    regexp.MustCompile("disallow-.*"),
@@ -254,9 +257,9 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 				},
 			}},
 			wantConfig: &interceptorConfig{
-				failureModeAllow:         true,
-				requestAttributes:        []string{"override-attr1"},
-				responseAttributes:       []string{"override-attr2"},
+				failureModeAllow:   true,
+				requestAttributes:  []string{"override-attr1"},
+				responseAttributes: []string{"override-attr2"},
 				mutationRules: headerMutationRules{
 					allowExpr:       regexp.MustCompile("allow-.*"),
 					disallowExpr:    regexp.MustCompile("disallow-.*"),
