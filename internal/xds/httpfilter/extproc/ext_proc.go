@@ -30,7 +30,9 @@ import (
 	v3procservicepb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 )
 
-var serverConfigFromGrpcService func(grpcService *v3corepb.GrpcService) (serverConfig, error)
+var serverConfigFromGrpcService = func(grpcService *v3corepb.GrpcService) (serverConfig, error) {
+	return serverConfig{}, fmt.Errorf("extproc: serverConfigFromGrpcService not implemented")
+}
 
 type builder struct{}
 
