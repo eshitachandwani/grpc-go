@@ -21,6 +21,7 @@ package extproc
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,7 @@ import (
 	v3corepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	v3procfilterpb "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	v3matcherpb "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
+	mutation_rulesv3 "github.com/envoyproxy/go-control-plane/envoy/config/common/mutation_rules/v3"
 )
 
 const testBaseURI = "base-uri"
@@ -112,13 +114,16 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 					channelCredentials: insecure.NewCredentials(),
 				},
 				deferredCloseTimeout: defaultDeferredCloseTimeout,
+				processingMode: processingModes{
+					requestHeaderMode:  modeSend,
+					responseHeaderMode: modeSend,
+				},
 			},
 		},
 		{
 			name: "ConfigUsingOnlyBase",
 			cfg: baseConfig{config: &v3procfilterpb.ExternalProcessor{
 				FailureModeAllow:         true,
-				AllowModeOverride:        true,
 				RequestAttributes:        []string{"attr1"},
 				ResponseAttributes:       []string{"attr2"},
 				ObservabilityMode:        true,
@@ -149,12 +154,23 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 						},
 					},
 				},
+				MutationRules: &mutation_rulesv3.HeaderMutationRules{
+					AllowExpression:    &v3matcherpb.RegexMatcher{Regex: "allow-.*"},
+					DisallowExpression: &v3matcherpb.RegexMatcher{Regex: "disallow-.*"},
+					DisallowAll:        wrapperspb.Bool(true),
+					DisallowIsError:    wrapperspb.Bool(true),
+				},
 			}},
 			wantConfig: &interceptorConfig{
 				failureModeAllow:         true,
-				allowModeOverride:        true,
 				requestAttributes:        []string{"attr1"},
 				responseAttributes:       []string{"attr2"},
+				mutationRules: headerMutationRules{
+					allowExpr:       regexp.MustCompile("allow-.*"),
+					disallowExpr:    regexp.MustCompile("disallow-.*"),
+					disallowAll:     true,
+					disallowIsError: true,
+				},
 				observabilityMode:        true,
 				disableImmediateResponse: true,
 				deferredCloseTimeout:     10 * time.Second,
@@ -176,7 +192,6 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 			name: "ConfigUsingBaseAndOverride",
 			cfg: baseConfig{config: &v3procfilterpb.ExternalProcessor{
 				FailureModeAllow:         false,
-				AllowModeOverride:        true,
 				RequestAttributes:        []string{"base-attr1"},
 				ResponseAttributes:       []string{"base-attr2"},
 				ObservabilityMode:        true,
@@ -204,6 +219,19 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 							},
 						}},
 					},
+					DisallowedHeaders: &v3matcherpb.ListStringMatcher{
+						Patterns: []*v3matcherpb.StringMatcher{{
+							MatchPattern: &v3matcherpb.StringMatcher_Exact{
+								Exact: "disallow-header",
+							},
+						}},
+					},
+				},
+				MutationRules: &mutation_rulesv3.HeaderMutationRules{
+					AllowExpression:    &v3matcherpb.RegexMatcher{Regex: "allow-.*"},
+					DisallowExpression: &v3matcherpb.RegexMatcher{Regex: "disallow-.*"},
+					DisallowAll:        wrapperspb.Bool(true),
+					DisallowIsError:    wrapperspb.Bool(true),
 				},
 			}},
 			override: overrideConfig{config: &v3procfilterpb.ExtProcOverrides{
@@ -227,9 +255,14 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 			}},
 			wantConfig: &interceptorConfig{
 				failureModeAllow:         true,
-				allowModeOverride:        true,
 				requestAttributes:        []string{"override-attr1"},
 				responseAttributes:       []string{"override-attr2"},
+				mutationRules: headerMutationRules{
+					allowExpr:       regexp.MustCompile("allow-.*"),
+					disallowExpr:    regexp.MustCompile("disallow-.*"),
+					disallowAll:     true,
+					disallowIsError: true,
+				},
 				observabilityMode:        true,
 				disableImmediateResponse: true,
 				deferredCloseTimeout:     10 * time.Second,
@@ -248,7 +281,8 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 					timeout:         0,
 					initialMetadata: nil,
 				},
-				allowedHeaders: []matcher.StringMatcher{matcher.NewExactStringMatcher("allow-header", false)},
+				allowedHeaders:    []matcher.StringMatcher{matcher.NewExactStringMatcher("allow-header", false)},
+				disallowedHeaders: []matcher.StringMatcher{matcher.NewExactStringMatcher("disallow-header", false)},
 			},
 		},
 		{

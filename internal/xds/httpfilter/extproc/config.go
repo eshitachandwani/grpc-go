@@ -66,15 +66,6 @@ type interceptorConfig struct {
 
 	// The following fields can only be set in the base config.
 	//
-	// allowModeOverride specifies whether to allow the external processing server
-	// to dynamically override the processing mode.
-	allowModeOverride bool
-	// allowedOverrideModes specifies the processing modes that the external
-	// processing server is allowed to dynamically override to if
-	// allowModeOverride is true. If allowModeOverride is false, this field is
-	// ignored. If allowModeOverride is true and this field is empty, the external
-	// processing server can override any processing mode.
-	allowedOverrideModes []*v3procfilterpb.ProcessingMode
 	// mutationRules specifies the rules for what modifications an external
 	// processing server may make to headers/trailers sent to it.
 	mutationRules headerMutationRules
@@ -173,10 +164,8 @@ type serverConfig struct {
 func newInterceptorConfig(base *v3procfilterpb.ExternalProcessor, override *v3procfilterpb.ExtProcOverrides) (*interceptorConfig, error) {
 	ic := &interceptorConfig{
 		failureModeAllow:         base.GetFailureModeAllow(),
-		allowModeOverride:        base.GetAllowModeOverride(),
 		requestAttributes:        base.GetRequestAttributes(),
 		responseAttributes:       base.GetResponseAttributes(),
-		allowedOverrideModes:     base.GetAllowedOverrideModes(),
 		observabilityMode:        base.GetObservabilityMode(),
 		disableImmediateResponse: base.GetDisableImmediateResponse(),
 	}
@@ -215,7 +204,7 @@ func newInterceptorConfig(base *v3procfilterpb.ExternalProcessor, override *v3pr
 	if ic.server, err = serverConfigFromGrpcService(base.GetGrpcService()); err != nil {
 		return nil, fmt.Errorf("failed to parse gRPC service config: %v", err)
 	}
-	
+
 	pm := base.GetProcessingMode()
 	// The default processing mode is to send headers and skip body and
 	// trailers.
