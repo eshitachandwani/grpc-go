@@ -247,7 +247,7 @@ func newInterceptorConfig(base *v3procfilterpb.ExternalProcessor, override *v3pr
 // convertStringMatchers converts a slice of protobuf StringMatcher messages to
 // a slice of matcher.StringMatcher.
 func convertStringMatchers(patterns []*v3matcherpb.StringMatcher) ([]matcher.StringMatcher, error) {
-	var matchers []matcher.StringMatcher
+	matchers := make([]matcher.StringMatcher, 0, len(patterns))
 	for _, m := range patterns {
 		sm, err := matcher.StringMatcherFromProto(m)
 		if err != nil {
