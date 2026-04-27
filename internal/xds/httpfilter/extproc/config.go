@@ -57,8 +57,8 @@ type interceptorConfig struct {
 	// continue. If false, the data plane RPC will be failed with a grpc status
 	// code of UNAVAILABLE.
 	failureModeAllow bool
-	// processingMode specifies the processing mode for each dataplane event.
-	processingMode processingModes
+	// processingModes specifies the processing mode for each dataplane event.
+	processingModes processingModes
 	// Attributes to be sent to the external processing server along with the
 	// request and response dataplane events.
 	requestAttributes  []string
@@ -188,15 +188,13 @@ func newInterceptorConfig(base *v3procfilterpb.ExternalProcessor, override *v3pr
 	}
 
 	if mr := base.GetMutationRules(); mr != nil {
+		// Ignoring the error here because we have already verified it when
+		// parsing the proto.
 		if allowexp := mr.GetAllowExpression(); allowexp != nil {
-			if ic.mutationRules.allowExpr, err = regexp.Compile(allowexp.GetRegex()); err != nil {
-				return nil, fmt.Errorf("invalid allow expression: %v", err)
-			}
+			ic.mutationRules.allowExpr, _ = regexp.Compile(allowexp.GetRegex())
 		}
 		if disallowexp := mr.GetDisallowExpression(); disallowexp != nil {
-			if ic.mutationRules.disallowExpr, err = regexp.Compile(disallowexp.GetRegex()); err != nil {
-				return nil, fmt.Errorf("invalid disallow expression: %v", err)
-			}
+			ic.mutationRules.disallowExpr, _ = regexp.Compile(disallowexp.GetRegex())
 		}
 		ic.mutationRules.disallowAll = mr.GetDisallowAll().GetValue()
 		ic.mutationRules.disallowIsError = mr.GetDisallowIsError().GetValue()
@@ -208,11 +206,11 @@ func newInterceptorConfig(base *v3procfilterpb.ExternalProcessor, override *v3pr
 	pm := base.GetProcessingMode()
 	// The default processing mode is to send headers and skip body and
 	// trailers.
-	ic.processingMode.requestHeaderMode = resolveHeaderMode(pm.GetRequestHeaderMode(), modeSend)
-	ic.processingMode.responseHeaderMode = resolveHeaderMode(pm.GetResponseHeaderMode(), modeSend)
-	ic.processingMode.responseTrailerMode = resolveHeaderMode(pm.GetResponseTrailerMode(), modeSkip)
-	ic.processingMode.requestBodyMode = resolveBodyMode(pm.GetRequestBodyMode())
-	ic.processingMode.responseBodyMode = resolveBodyMode(pm.GetResponseBodyMode())
+	ic.processingModes.requestHeaderMode = resolveHeaderMode(pm.GetRequestHeaderMode(), modeSend)
+	ic.processingModes.responseHeaderMode = resolveHeaderMode(pm.GetResponseHeaderMode(), modeSend)
+	ic.processingModes.responseTrailerMode = resolveHeaderMode(pm.GetResponseTrailerMode(), modeSkip)
+	ic.processingModes.requestBodyMode = resolveBodyMode(pm.GetRequestBodyMode())
+	ic.processingModes.responseBodyMode = resolveBodyMode(pm.GetResponseBodyMode())
 
 	if override == nil {
 		return ic, nil
@@ -235,11 +233,11 @@ func newInterceptorConfig(base *v3procfilterpb.ExternalProcessor, override *v3pr
 		ic.responseAttributes = override.GetResponseAttributes()
 	}
 	if pm := override.GetProcessingMode(); pm != nil {
-		ic.processingMode.requestHeaderMode = resolveHeaderMode(pm.GetRequestHeaderMode(), modeSend)
-		ic.processingMode.responseHeaderMode = resolveHeaderMode(pm.GetResponseHeaderMode(), modeSend)
-		ic.processingMode.responseTrailerMode = resolveHeaderMode(pm.GetResponseTrailerMode(), modeSkip)
-		ic.processingMode.requestBodyMode = resolveBodyMode(pm.GetRequestBodyMode())
-		ic.processingMode.responseBodyMode = resolveBodyMode(pm.GetResponseBodyMode())
+		ic.processingModes.requestHeaderMode = resolveHeaderMode(pm.GetRequestHeaderMode(), modeSend)
+		ic.processingModes.responseHeaderMode = resolveHeaderMode(pm.GetResponseHeaderMode(), modeSend)
+		ic.processingModes.responseTrailerMode = resolveHeaderMode(pm.GetResponseTrailerMode(), modeSkip)
+		ic.processingModes.requestBodyMode = resolveBodyMode(pm.GetRequestBodyMode())
+		ic.processingModes.responseBodyMode = resolveBodyMode(pm.GetResponseBodyMode())
 	}
 	return ic, nil
 }
@@ -247,9 +245,9 @@ func newInterceptorConfig(base *v3procfilterpb.ExternalProcessor, override *v3pr
 // convertStringMatchers converts a slice of protobuf StringMatcher messages to
 // a slice of matcher.StringMatcher.
 func convertStringMatchers(patterns []*v3matcherpb.StringMatcher) ([]matcher.StringMatcher, error) {
-	matchers := make([]matcher.StringMatcher, 0, len(patterns))
-	for _, m := range patterns {
-		sm, err := matcher.StringMatcherFromProto(m)
+	var matchers []matcher.StringMatcher
+	for _, p := range patterns {
+		sm, err := matcher.StringMatcherFromProto(p)
 		if err != nil {
 			return nil, err
 		}

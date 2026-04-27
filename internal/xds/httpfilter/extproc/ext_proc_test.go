@@ -41,6 +41,9 @@ import (
 
 const testBaseURI = "base-uri"
 
+// incorrectFilterConfig embeds httpfilter.FilterConfig but is not of type
+// baseConfig/overrideConfig, and is used to test incorrect config types being
+// passed to BuildClientInterceptor.
 type incorrectFilterConfig struct {
 	httpfilter.FilterConfig
 }
@@ -57,6 +60,8 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 	origServerConfigFromGrpcService := serverConfigFromGrpcService
 	defer func() { serverConfigFromGrpcService = origServerConfigFromGrpcService }()
 
+	// Mocking serverConfigFromGrpcService to return a test target URI and
+	// insecure creds.
 	serverConfigFromGrpcService = func(grpcService *v3corepb.GrpcService) (serverConfig, error) {
 		if grpcService == nil {
 			return serverConfig{}, nil
@@ -67,6 +72,8 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 		return serverConfig{
 			targetURI:          grpcService.GetGoogleGrpc().GetTargetUri(),
 			channelCredentials: insecure.NewCredentials(),
+			initialMetadata:    nil,
+			timeout:            0,
 		}, nil
 	}
 
@@ -113,7 +120,7 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 					targetURI:          testBaseURI,
 					channelCredentials: insecure.NewCredentials(),
 				},
-				processingMode: processingModes{
+				processingModes: processingModes{
 					requestHeaderMode:   modeSend,
 					responseHeaderMode:  modeSend,
 					requestBodyMode:     modeSkip,
@@ -148,13 +155,9 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 				},
 				ForwardRules: &v3procfilterpb.HeaderForwardingRules{
 					AllowedHeaders: &v3matcherpb.ListStringMatcher{
-						Patterns: []*v3matcherpb.StringMatcher{
-							{
-								MatchPattern: &v3matcherpb.StringMatcher_Exact{
-									Exact: "allow-header",
-								},
-							},
-						},
+						Patterns: []*v3matcherpb.StringMatcher{{
+							MatchPattern: &v3matcherpb.StringMatcher_Exact{Exact: "allow-header"},
+						}},
 					},
 				},
 				MutationRules: &v3mutationrulespb.HeaderMutationRules{
@@ -177,7 +180,7 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 				observabilityMode:        true,
 				disableImmediateResponse: true,
 				deferredCloseTimeout:     10 * time.Second,
-				processingMode: processingModes{
+				processingModes: processingModes{
 					requestHeaderMode:   modeSend,
 					responseHeaderMode:  modeSkip,
 					responseTrailerMode: modeSend,
@@ -217,16 +220,12 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 				ForwardRules: &v3procfilterpb.HeaderForwardingRules{
 					AllowedHeaders: &v3matcherpb.ListStringMatcher{
 						Patterns: []*v3matcherpb.StringMatcher{{
-							MatchPattern: &v3matcherpb.StringMatcher_Exact{
-								Exact: "allow-header",
-							},
+							MatchPattern: &v3matcherpb.StringMatcher_Exact{Exact: "allow-header"},
 						}},
 					},
 					DisallowedHeaders: &v3matcherpb.ListStringMatcher{
 						Patterns: []*v3matcherpb.StringMatcher{{
-							MatchPattern: &v3matcherpb.StringMatcher_Exact{
-								Exact: "disallow-header",
-							},
+							MatchPattern: &v3matcherpb.StringMatcher_Exact{Exact: "disallow-header"},
 						}},
 					},
 				},
@@ -269,7 +268,7 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 				observabilityMode:        true,
 				disableImmediateResponse: true,
 				deferredCloseTimeout:     10 * time.Second,
-				processingMode: processingModes{
+				processingModes: processingModes{
 					requestHeaderMode:   modeSkip,
 					responseHeaderMode:  modeSend,
 					responseTrailerMode: modeSkip,
@@ -279,10 +278,6 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 				server: serverConfig{
 					targetURI:          "override-uri",
 					channelCredentials: insecure.NewCredentials(),
-					// TODO : Remove these when timeout and metadata are used. Adding zero
-					// values here to satisfy the vet.
-					timeout:         0,
-					initialMetadata: nil,
 				},
 				allowedHeaders:    []matcher.StringMatcher{matcher.NewExactStringMatcher("allow-header", false)},
 				disallowedHeaders: []matcher.StringMatcher{matcher.NewExactStringMatcher("disallow-header", false)},
@@ -299,20 +294,20 @@ func (s) TestBuildClientInterceptor(t *testing.T) {
 			intptr, err := f.BuildClientInterceptor(tc.cfg, tc.override)
 			if tc.wantErr == "" {
 				if err != nil {
-					t.Fatalf("BuildClientInterceptor() unexpected error: %v", err)
+					t.Fatalf("BuildClientInterceptor() returned unexpected error: %v", err)
 				}
-				got, ok := intptr.(*interceptor)
+				ic, ok := intptr.(*interceptor)
 				if !ok {
 					t.Fatalf("BuildClientInterceptor() returned %T, want *interceptor", intptr)
 				}
-				if !reflect.DeepEqual(got.config, tc.wantConfig) {
-					t.Fatalf("interceptor.config = %+v, want %+v", got.config, tc.wantConfig)
+				if !reflect.DeepEqual(ic.config, tc.wantConfig) {
+					t.Fatalf("Interceptor config = %+v, want %+v", ic.config, tc.wantConfig)
 				}
 				intptr.Close()
 				return
 			}
 			if err == nil {
-				t.Fatalf("BuildClientInterceptor() expected error %v, got nil", tc.wantErr)
+				t.Fatalf("BuildClientInterceptor() returned nil error, want error containing %q", tc.wantErr)
 			}
 			if !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("BuildClientInterceptor() error = %v, want error containing %q", err, tc.wantErr)
