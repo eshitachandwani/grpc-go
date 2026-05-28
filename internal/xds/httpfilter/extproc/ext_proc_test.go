@@ -41,7 +41,6 @@ var allSupportedAttributes = []string{
 }
 
 func TestConstructAttributes(t *testing.T) {
-
 	ri := resolver.RPCInfo{
 		Method:    "/test.Service/TestMethod",
 		Authority: "dataplane-host",
@@ -62,23 +61,12 @@ func TestConstructAttributes(t *testing.T) {
 	}
 
 	// Verify the root key is envoy.filters.http.ext_proc
-	rootStruct, ok := attr["envoy.filters.http.ext_proc"]
+	reqStruct, ok := attr["envoy.filters.http.ext_proc"]
 	if !ok {
 		t.Fatalf("expected key 'envoy.filters.http.ext_proc' in attributes map")
 	}
 
-	// Verify the nested "request" object
-	reqVal, ok := rootStruct.GetFields()["request"]
-	if !ok {
-		t.Fatalf("expected key 'request' in root struct fields")
-	}
-
-	reqStruct := reqVal.GetStructValue()
-	if reqStruct == nil {
-		t.Fatalf("expected 'request' to be a struct value")
-	}
-
-	// Helper to get string field value
+	// Helper to get string field value from flat structure
 	getStringField := func(key string) string {
 		val, ok := reqStruct.GetFields()[key]
 		if !ok {
@@ -88,51 +76,51 @@ func TestConstructAttributes(t *testing.T) {
 	}
 
 	// Verify path and url_path
-	if got := getStringField("path"); got != ri.Method {
+	if got := getStringField("request.path"); got != ri.Method {
 		t.Errorf("request.path = %q, want %q", got, ri.Method)
 	}
-	if got := getStringField("url_path"); got != ri.Method {
+	if got := getStringField("request.url_path"); got != ri.Method {
 		t.Errorf("request.url_path = %q, want %q", got, ri.Method)
 	}
 
 	// Verify host (should match ri.Authority)
-	if got := getStringField("host"); got != "dataplane-host" {
+	if got := getStringField("request.host"); got != "dataplane-host" {
 		t.Errorf("request.host = %q, want 'dataplane-host'", got)
 	}
 
 	// Verify scheme, method, query, protocol
-	if got := getStringField("scheme"); got != "" {
+	if got := getStringField("request.scheme"); got != "" {
 		t.Errorf("request.scheme = %q, want empty string", got)
 	}
-	if got := getStringField("method"); got != "POST" {
+	if got := getStringField("request.method"); got != "POST" {
 		t.Errorf("request.method = %q, want 'POST'", got)
 	}
-	if got := getStringField("query"); got != "" {
+	if got := getStringField("request.query"); got != "" {
 		t.Errorf("request.query = %q, want empty string", got)
 	}
-	if got := getStringField("protocol"); got != "" {
+	if got := getStringField("request.protocol"); got != "" {
 		t.Errorf("request.protocol = %q, want empty string", got)
 	}
 
 	// Verify referer, useragent, id
-	if got := getStringField("referer"); got != "http://example.com" {
+	if got := getStringField("request.referer"); got != "http://example.com" {
 		t.Errorf("request.referer = %q, want 'http://example.com'", got)
 	}
-	if got := getStringField("useragent"); got != "grpc-go-test" {
+	if got := getStringField("request.useragent"); got != "grpc-go-test" {
 		t.Errorf("request.useragent = %q, want 'grpc-go-test'", got)
 	}
-	if got := getStringField("id"); got != "12345-abcde" {
+	if got := getStringField("request.id"); got != "12345-abcde" {
 		t.Errorf("request.id = %q, want '12345-abcde'", got)
 	}
 
 	// Verify headers map
-	headersVal, ok := reqStruct.GetFields()["headers"]
+	headersVal, ok := reqStruct.GetFields()["request.headers"]
 	if !ok {
-		t.Fatalf("expected key 'headers' in request fields")
+		t.Fatalf("expected key 'request.headers' in request fields")
 	}
 	headersStruct := headersVal.GetStructValue()
 	if headersStruct == nil {
-		t.Fatalf("expected 'headers' to be a struct value")
+		t.Fatalf("expected 'request.headers' to be a struct value")
 	}
 
 	wantHeaders := map[string]string{
@@ -156,7 +144,6 @@ func TestConstructAttributes(t *testing.T) {
 }
 
 func TestConstructAttributesFiltering(t *testing.T) {
-
 	ri := resolver.RPCInfo{
 		Method:    "/test.Service/TestMethod",
 		Authority: "dataplane-host",
@@ -174,26 +161,25 @@ func TestConstructAttributesFiltering(t *testing.T) {
 		t.Fatalf("constructAttributes failed: %v", err)
 	}
 
-	rootStruct := attr["envoy.filters.http.ext_proc"]
-	reqStruct := rootStruct.GetFields()["request"].GetStructValue()
+	reqStruct := attr["envoy.filters.http.ext_proc"]
 
 	// Verify only path and host are populated
-	if _, ok := reqStruct.GetFields()["path"]; !ok {
-		t.Errorf("expected 'path' to be present")
+	if _, ok := reqStruct.GetFields()["request.path"]; !ok {
+		t.Errorf("expected 'request.path' to be present")
 	}
-	if _, ok := reqStruct.GetFields()["host"]; !ok {
-		t.Errorf("expected 'host' to be present")
+	if _, ok := reqStruct.GetFields()["request.host"]; !ok {
+		t.Errorf("expected 'request.host' to be present")
 	}
 
 	// Verify other fields (like headers, referer, method) are absent
-	if _, ok := reqStruct.GetFields()["method"]; ok {
-		t.Errorf("expected 'method' to be filtered out / absent")
+	if _, ok := reqStruct.GetFields()["request.method"]; ok {
+		t.Errorf("expected 'request.method' to be filtered out / absent")
 	}
-	if _, ok := reqStruct.GetFields()["headers"]; ok {
-		t.Errorf("expected 'headers' to be filtered out / absent")
+	if _, ok := reqStruct.GetFields()["request.headers"]; ok {
+		t.Errorf("expected 'request.headers' to be filtered out / absent")
 	}
-	if _, ok := reqStruct.GetFields()["referer"]; ok {
-		t.Errorf("expected 'referer' to be filtered out / absent")
+	if _, ok := reqStruct.GetFields()["request.referer"]; ok {
+		t.Errorf("expected 'request.referer' to be filtered out / absent")
 	}
 }
 
@@ -209,21 +195,20 @@ func TestConstructAttributesWithEmptyMetadata(t *testing.T) {
 		t.Fatalf("constructAttributes failed: %v", err)
 	}
 
-	rootStruct := attr["envoy.filters.http.ext_proc"]
-	reqStruct := rootStruct.GetFields()["request"].GetStructValue()
+	reqStruct := attr["envoy.filters.http.ext_proc"]
 
 	// Verify fields are constructed correctly with default empty values
-	if got := reqStruct.GetFields()["referer"].GetStringValue(); got != "" {
+	if got := reqStruct.GetFields()["request.referer"].GetStringValue(); got != "" {
 		t.Errorf("expected empty referer, got %q", got)
 	}
-	if got := reqStruct.GetFields()["useragent"].GetStringValue(); got != "" {
+	if got := reqStruct.GetFields()["request.useragent"].GetStringValue(); got != "" {
 		t.Errorf("expected empty useragent, got %q", got)
 	}
-	if got := reqStruct.GetFields()["id"].GetStringValue(); got != "" {
+	if got := reqStruct.GetFields()["request.id"].GetStringValue(); got != "" {
 		t.Errorf("expected empty id, got %q", got)
 	}
 
-	headersStruct := reqStruct.GetFields()["headers"].GetStructValue()
+	headersStruct := reqStruct.GetFields()["request.headers"].GetStructValue()
 	if len(headersStruct.GetFields()) != 0 {
 		t.Errorf("expected empty headers struct, got fields: %v", headersStruct.GetFields())
 	}
