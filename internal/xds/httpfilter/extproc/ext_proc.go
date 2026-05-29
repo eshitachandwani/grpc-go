@@ -332,19 +332,20 @@ func (i *clientInterceptor) NewStream(ctx context.Context, ri resolver.RPCInfo, 
 	}
 
 	cs := &clientStream{
-		config:                  i.config,
-		extStream:               extStream,
-		nonOKStreamEnd:          grpcsync.NewEvent(),
-		requestBuffer:           buffer.NewUnbounded(),
-		responseBodyBuffer:      buffer.NewUnbounded(),
-		responseHeaderModified:  grpcsync.NewEvent(),
-		responseTrailerModified: grpcsync.NewEvent(),
-		dataplaneStreamCreated:  make(chan struct{}),
-		ctx:                     ctx,
-		extSendCh:               make(chan *v3procservicepb.ProcessingRequest),
-		drainTriggeredCh:        make(chan struct{}),
-		forwardLoopDoneCh:       make(chan struct{}),
-		drained:                 grpcsync.NewEvent(),
+		config:                    i.config,
+		extStream:                 extStream,
+		nonOKStreamEnd:            grpcsync.NewEvent(),
+		requestBuffer:             buffer.NewUnbounded(),
+		responseBodyBuffer:        buffer.NewUnbounded(),
+		responseHeaderModified:    grpcsync.NewEvent(),
+		responseTrailerModified:   grpcsync.NewEvent(),
+		dataplaneStreamCreated:    make(chan struct{}),
+		ctx:                       ctx,
+		extSendCh:                 make(chan *v3procservicepb.ProcessingRequest),
+		drainTriggeredCh:          make(chan struct{}),
+		forwardLoopDoneCh:         make(chan struct{}),
+		drained:                   grpcsync.NewEvent(),
+		responseReceivingLoopDone: make(chan struct{}),
 	}
 
 	// If the processing mode for header is send, we need to wait for response
@@ -724,12 +725,10 @@ type clientStream struct {
 	forwardLoopDoneCh         chan struct{}
 	drainTriggered            atomic.Bool
 	drained                   *grpcsync.Event
-	responseReceivingLoopDone chan struct{}
-	abortedMsg                proto.Message
-	abortedMsgErr             error
 	drainedConsumer           atomic.Bool
-}	abortedResponseBody      proto.Message
-	abortedBodyMu            sync.Mutex
+	responseReceivingLoopDone chan struct{}
+	abortedResponseBody       proto.Message
+	trailersOnly              bool
 }
 
 func (cs *clientStream) triggerDrain() {
@@ -796,10 +795,14 @@ func (cs *clientStream) processResponseHeaders() error {
 			return
 		}
 		cs.responseHeader = header
+		if _, ok := header["grpc-status"]; ok {
+			cs.trailersOnly = true
+		}
 		if cs.config.processingModes.responseHeaderMode == modeSend && !cs.streamClosed {
 			req := &v3procservicepb.ProcessingRequest{
 				Request: &v3procservicepb.ProcessingRequest_ResponseHeaders{ResponseHeaders: &v3procservicepb.HttpHeaders{
-					Headers: httpfilter.ConstructHeaderMap(header, cs.config.allowedHeaders, cs.config.disallowedHeaders),
+					Headers:     httpfilter.ConstructHeaderMap(header, cs.config.allowedHeaders, cs.config.disallowedHeaders),
+					EndOfStream: cs.trailersOnly,
 				}},
 				Attributes:        cs.requestAttributes,
 				ObservabilityMode: cs.config.observabilityMode,
@@ -817,6 +820,8 @@ func (cs *clientStream) processResponseHeaders() error {
 				err = cs.streamCloseErr
 			case <-cs.drainTriggeredCh:
 			}
+		} else {
+			cs.responseHeaderModified.Fire()
 		}
 	})
 	return err
@@ -849,7 +854,7 @@ func (cs *clientStream) processResponseTrailers() {
 			return
 		}
 		cs.responseTrailers = trailer
-		if cs.config.processingModes.responseTrailerMode == modeSend && !cs.streamClosed {
+		if cs.config.processingModes.responseTrailerMode == modeSend && !cs.streamClosed && !cs.trailersOnly {
 			req := &v3procservicepb.ProcessingRequest{
 				Request: &v3procservicepb.ProcessingRequest_ResponseTrailers{ResponseTrailers: &v3procservicepb.HttpTrailers{
 					Trailers: httpfilter.ConstructHeaderMap(trailer, cs.config.allowedHeaders, cs.config.disallowedHeaders),
@@ -911,7 +916,9 @@ func (cs *clientStream) CloseSend() error {
 	case cs.extSendCh <- req:
 		return nil
 	case <-cs.drainTriggeredCh:
-		<-cs.forwardLoopDoneCh
+		if err := cs.waitChannel(cs.forwardLoopDoneCh); err != nil {
+			return err
+		}
 		return s.CloseSend()
 	case <-cs.nonOKStreamEnd.Done():
 		return cs.streamCloseErr
@@ -927,6 +934,7 @@ func (cs *clientStream) Context() context.Context {
 }
 
 func (cs *clientStream) responseReceivingLoop(msgPrototype proto.Message) {
+	defer close(cs.responseReceivingLoopDone)
 	s, err := cs.waitStream(cs.ctx)
 	if err != nil {
 		return
@@ -974,6 +982,7 @@ func (cs *clientStream) responseReceivingLoop(msgPrototype proto.Message) {
 		select {
 		case cs.extSendCh <- req:
 		case <-cs.drainTriggeredCh:
+			cs.abortedResponseBody = newMsg.(proto.Message)
 			return
 		case <-cs.nonOKStreamEnd.Done():
 			return
@@ -1063,7 +1072,20 @@ func (cs *clientStream) RecvMsg(m any) error {
 		default:
 		}
 
-		// No mutated messages remaining: read raw directly from backend data plane.
+		// No mutated messages remaining: wait for background loop to exit safely
+		if err := cs.waitChannel(cs.responseReceivingLoopDone); err != nil {
+			return err
+		}
+
+		// Deliver the aborted message if present
+		if cs.abortedResponseBody != nil {
+			proto.Reset(msg)
+			proto.Merge(msg, cs.abortedResponseBody)
+			cs.abortedResponseBody = nil
+			return nil
+		}
+
+		// Safe direct fallback to synchronous dataplane reads
 		s, err := cs.waitStream(cs.ctx)
 		if err != nil {
 			return err
@@ -1166,7 +1188,9 @@ func (cs *clientStream) SendMsg(m any) error {
 	case <-cs.drainTriggeredCh:
 		// DRAIN RACE CAUGHT: The sender loop is shut down, preventing new handoffs.
 		// Block the application stream thread until all echoes are flushed.
-		<-cs.forwardLoopDoneCh
+		if err := cs.waitChannel(cs.forwardLoopDoneCh); err != nil {
+			return err
+		}
 		s, err := cs.waitStream(cs.ctx)
 		if err != nil {
 			return err
@@ -1217,5 +1241,18 @@ func (cs *clientStream) requestForwardingLoop(reqPrototype proto.Message) {
 			cs.dataplaneStream.CloseSend()
 			return
 		}
+	}
+}
+
+// waitChannel waits for the provided channel to be closed, while also respecting
+// context cancellation and stream failures.
+func (cs *clientStream) waitChannel(ch <-chan struct{}) error {
+	select {
+	case <-ch:
+		return nil
+	case <-cs.ctx.Done():
+		return cs.ctx.Err()
+	case <-cs.nonOKStreamEnd.Done():
+		return cs.streamCloseErr
 	}
 }
