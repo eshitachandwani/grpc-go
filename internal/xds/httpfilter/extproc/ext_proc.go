@@ -761,13 +761,16 @@ func (cs *clientStream) extReqSenderLoop() {
 	}
 }
 
-// waitStream waits for the dataplane stream to be created or for the context to be done.
+// waitStream waits for the dataplane stream to be created or for the context to
+// be done. It also checks if the proc stream has not ended abrubtly with a non
+// io.EOF error.
 func (cs *clientStream) waitStream(ctx context.Context) (resolver.ClientStream, error) {
 	select {
 	case <-cs.dataplaneStreamCreated:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+	// Return error and fail the RPC if the proc server has abrubtly ended. Will never be fired incase the stream is never created.
 	if cs.nonOKStreamEnd.HasFired() {
 		return nil, cs.streamCloseErr
 	}
