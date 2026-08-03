@@ -285,7 +285,7 @@ func (i *clientInterceptor) NewStream(ctx context.Context, ri resolver.RPCInfo, 
 	cancelCtx, cancel := context.WithCancel(ctx)
 	procCtx, procCancel := createProcContext(cancelCtx, i.config.server)
 
-	csCommon := &commonStream{
+	csCommon := &commonFilterStream{
 		ctx:                    cancelCtx,
 		cancel:                 cancel,
 		procCancel:             procCancel,
@@ -313,7 +313,7 @@ func (i *clientInterceptor) NewStream(ctx context.Context, ri resolver.RPCInfo, 
 	// Observability mode.
 	if i.config.observabilityMode {
 		ocs := &observabilityFilterClientStream{
-			commonStream: csCommon,
+			commonFilterStream: csCommon,
 			procRecvDone: make(chan struct{}),
 		}
 
@@ -346,7 +346,7 @@ func (i *clientInterceptor) NewStream(ctx context.Context, ri resolver.RPCInfo, 
 
 	// Normal mode.
 	cs := &clientStream{
-		commonStream:             csCommon,
+		commonFilterStream:             csCommon,
 		procStreamFailed:         grpcsync.NewEvent(),
 		procStreamBypass:         grpcsync.NewEvent(),
 		mutatedReqBuffer:         buffer.NewUnbounded[*v3procservicepb.StreamedBodyResponse](),
@@ -388,9 +388,9 @@ func (i *clientInterceptor) NewStream(ctx context.Context, ri resolver.RPCInfo, 
 	return cs, nil
 }
 
-// commonStream contains state and synchronization primitives shared between the
+// commonFilterStream contains state and synchronization primitives shared between the
 // normal and observability mode client stream implementations.
-type commonStream struct {
+type commonFilterStream struct {
 	// ctx is stored to allow blocking ClientStream interface methods (which do
 	// not accept context parameters) to respect context cancellation/timeout and
 	// retrieve ctx.Err() for returning the correct gRPC status error. This
@@ -417,7 +417,7 @@ type commonStream struct {
 	clientHeadersStartTime time.Time
 }
 
-func (cs *commonStream) recordMetric(handle *estats.Float64HistoHandle, duration float64) {
+func (cs *commonFilterStream) recordMetric(handle *estats.Float64HistoHandle, duration float64) {
 	if cs.metricsRecorder == nil {
 		return
 	}
@@ -428,7 +428,7 @@ func (cs *commonStream) recordMetric(handle *estats.Float64HistoHandle, duration
 // processor stream in NewStream. In deny mode, it returns an internal error. In
 // allow mode, it bypasses the external processor and creates and returns the
 // dataplane stream directly.
-func (cs *commonStream) handleInitError(err error, newStream func(context.Context, ...grpc.CallOption) (grpc.ClientStream, error), opts ...grpc.CallOption) (grpc.ClientStream, error) {
+func (cs *commonFilterStream) handleInitError(err error, newStream func(context.Context, ...grpc.CallOption) (grpc.ClientStream, error), opts ...grpc.CallOption) (grpc.ClientStream, error) {
 	cs.procCancel()
 
 	if err != io.EOF && !cs.config.failureModeAllow {
@@ -445,7 +445,7 @@ func (cs *commonStream) handleInitError(err error, newStream func(context.Contex
 
 // newProcessingRequest creates a new ProcessingRequest with ObservabilityMode,
 // ProtocolConfig, and Attributes fields initialized.
-func (cs *commonStream) newProcessingRequest(isClientMessage bool) *v3procservicepb.ProcessingRequest {
+func (cs *commonFilterStream) newProcessingRequest(isClientMessage bool) *v3procservicepb.ProcessingRequest {
 	req := &v3procservicepb.ProcessingRequest{
 		ObservabilityMode: cs.config.observabilityMode,
 	}
@@ -464,7 +464,7 @@ func (cs *commonStream) newProcessingRequest(isClientMessage bool) *v3procservic
 }
 
 // requestHeaders creates a ProcessingRequest for sending request headers.
-func (cs *commonStream) requestHeaders(md metadata.MD, added [][]string) *v3procservicepb.ProcessingRequest {
+func (cs *commonFilterStream) requestHeaders(md metadata.MD, added [][]string) *v3procservicepb.ProcessingRequest {
 	req := cs.newProcessingRequest(true)
 	req.Request = &v3procservicepb.ProcessingRequest_RequestHeaders{
 		RequestHeaders: &v3procservicepb.HttpHeaders{
@@ -476,7 +476,7 @@ func (cs *commonStream) requestHeaders(md metadata.MD, added [][]string) *v3proc
 
 // responseHeaders creates a ProcessingRequest for sending response
 // headers.
-func (cs *commonStream) responseHeaders(header metadata.MD) *v3procservicepb.ProcessingRequest {
+func (cs *commonFilterStream) responseHeaders(header metadata.MD) *v3procservicepb.ProcessingRequest {
 	req := cs.newProcessingRequest(false)
 	req.Request = &v3procservicepb.ProcessingRequest_ResponseHeaders{ResponseHeaders: &v3procservicepb.HttpHeaders{
 		Headers:     httpfilter.ConstructHeaderMap(header, nil, cs.config.allowedHeaders, cs.config.disallowedHeaders),
@@ -487,7 +487,7 @@ func (cs *commonStream) responseHeaders(header metadata.MD) *v3procservicepb.Pro
 
 // responseTrailers creates a ProcessingRequest for sending response
 // trailers.
-func (cs *commonStream) responseTrailers(trailers metadata.MD) *v3procservicepb.ProcessingRequest {
+func (cs *commonFilterStream) responseTrailers(trailers metadata.MD) *v3procservicepb.ProcessingRequest {
 	req := cs.newProcessingRequest(false)
 	req.Request = &v3procservicepb.ProcessingRequest_ResponseTrailers{ResponseTrailers: &v3procservicepb.HttpTrailers{
 		Trailers: httpfilter.ConstructHeaderMap(trailers, nil, cs.config.allowedHeaders, cs.config.disallowedHeaders),
@@ -497,7 +497,7 @@ func (cs *commonStream) responseTrailers(trailers metadata.MD) *v3procservicepb.
 
 // halfClose creates a ProcessingRequest indicating end of stream without
 // a message body.
-func (cs *commonStream) halfClose() *v3procservicepb.ProcessingRequest {
+func (cs *commonFilterStream) halfClose() *v3procservicepb.ProcessingRequest {
 	req := cs.newProcessingRequest(true)
 	req.Request = &v3procservicepb.ProcessingRequest_RequestBody{
 		RequestBody: &v3procservicepb.HttpBody{
@@ -510,7 +510,7 @@ func (cs *commonStream) halfClose() *v3procservicepb.ProcessingRequest {
 
 // marshalAndCreateBodyReq marshals the message and creates a request or
 // response body ProcessingRequest.
-func (cs *commonStream) marshalAndCreateBodyReq(m any, isClientMessage bool) (*v3procservicepb.ProcessingRequest, error) {
+func (cs *commonFilterStream) marshalAndCreateBodyReq(m any, isClientMessage bool) (*v3procservicepb.ProcessingRequest, error) {
 	msg, ok := m.(proto.Message)
 	if !ok {
 		return nil, status.Errorf(codes.Internal, "extproc: message does not implement proto.Message")
@@ -537,7 +537,7 @@ func (cs *commonStream) marshalAndCreateBodyReq(m any, isClientMessage bool) (*v
 // message exchanges between the application client, the external processor, and
 // the backend dataplane in observability mode.
 type observabilityFilterClientStream struct {
-	*commonStream
+	*commonFilterStream
 
 	procStreamBypass atomic.Bool   // set to true when the external processor stream should be bypassed
 	procRecvDone     chan struct{} // closed when discardProcessorResponsesLoop detects stream closure/failure
@@ -767,7 +767,7 @@ func (ocs *observabilityFilterClientStream) failObsProcStream(err error) {
 // message exchanges between the application client, the external processor, and
 // the backend dataplane.
 type clientStream struct {
-	*commonStream
+	*commonFilterStream
 
 	procStreamFailed *grpcsync.Event // fired when external processor stream has closed and RPC should be failed
 	procStreamBypass *grpcsync.Event // fired when the external processor stream should be bypassed or drained
@@ -1637,7 +1637,7 @@ func (cs *clientStream) initiateResponseTrailerProcessing() {
 	cs.responseTrailers = cs.dataplaneStream.Trailer()
 	if cs.config.processingModes.responseTrailerMode == modeSend && !cs.procStreamBypass.HasFired() {
 		select {
-		case cs.procSendCh <- cs.commonStream.responseTrailers(cs.responseTrailers):
+		case cs.procSendCh <- cs.commonFilterStream.responseTrailers(cs.responseTrailers):
 		case <-cs.ctx.Done():
 		case <-cs.procStreamFailed.Done():
 		case <-cs.procStreamBypass.Done():
