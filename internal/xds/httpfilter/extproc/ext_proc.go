@@ -49,8 +49,8 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	v3procfilterpb "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
-	v3procservicegrpc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	v3procservicepb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
+	v3procservicegrpc "google.golang.org/grpc/internal/xds/httpfilter/extproc/proto"
+	v3procservicepb "google.golang.org/grpc/internal/xds/httpfilter/extproc/proto"
 )
 
 func init() {
