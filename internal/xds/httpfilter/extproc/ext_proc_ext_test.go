@@ -5227,11 +5227,17 @@ func (s) TestFlowControl_DownstreamToSidestream_OverdraftAndUnblock(t *testing.T
 		}
 
 		// Receive second message (unblocked after window update).
-		req, err = stream.Recv()
-		if err != nil {
-			return err
+		for {
+			req, err = stream.Recv()
+			if err != nil {
+				return err
+			}
+			if req.GetClientWindowUpdate() != nil {
+				continue
+			}
+			break
 		}
-		if req.GetRequestBody() != nil {
+		if req.GetRequestBody() == nil {
 			return fmt.Errorf("expected request body, got %v", req)
 		}
 		if err := stream.Send(requestBodyResponse(req.GetRequestBody().GetBody())); err != nil {
@@ -5239,11 +5245,17 @@ func (s) TestFlowControl_DownstreamToSidestream_OverdraftAndUnblock(t *testing.T
 		}
 
 		// Receive CloseSend message.
-		req, err = stream.Recv()
-		if err != nil {
-			return err
+		for {
+			req, err = stream.Recv()
+			if err != nil {
+				return err
+			}
+			if req.GetClientWindowUpdate() != nil {
+				continue
+			}
+			break
 		}
-		if req.GetRequestBody() == nil && req.GetRequestBody().GetEndOfStreamWithoutMessage() {
+		if req.GetRequestBody() == nil || !req.GetRequestBody().GetEndOfStreamWithoutMessage() {
 			return fmt.Errorf("expected request body with end of stream without message, got %v", req)
 		}
 		if err := stream.Send(requestBodyResponseWithEOS(nil, true)); err != nil {
@@ -5393,11 +5405,17 @@ func (s) TestFlowControl_DownstreamToSidestream_PartialWindowUpdate(t *testing.T
 		}
 
 		// Receive and echo back the second request message.
-		req, err = stream.Recv()
-		if err != nil {
-			return err
+		for {
+			req, err = stream.Recv()
+			if err != nil {
+				return err
+			}
+			if req.GetClientWindowUpdate() != nil {
+				continue
+			}
+			break
 		}
-		if req.GetRequestBody() != nil {
+		if req.GetRequestBody() == nil {
 			return fmt.Errorf("expected request body, got %v", req)
 		}
 		if err := stream.Send(requestBodyResponse(req.GetRequestBody().GetBody())); err != nil {
@@ -5405,11 +5423,17 @@ func (s) TestFlowControl_DownstreamToSidestream_PartialWindowUpdate(t *testing.T
 		}
 
 		// Receive and echo back the close-send message.
-		req, err = stream.Recv()
-		if err != nil {
-			return err
+		for {
+			req, err = stream.Recv()
+			if err != nil {
+				return err
+			}
+			if req.GetClientWindowUpdate() != nil {
+				continue
+			}
+			break
 		}
-		if req.GetRequestBody() != nil && req.GetRequestBody().GetEndOfStreamWithoutMessage() {
+		if req.GetRequestBody() == nil || !req.GetRequestBody().GetEndOfStreamWithoutMessage() {
 			return fmt.Errorf("expected request body with end of stream without message, got %v", req)
 		}
 		if err := stream.Send(requestBodyResponseWithEOS(nil, true)); err != nil {
@@ -5810,11 +5834,17 @@ func (s) TestFlowControl_UpstreamToSidestream_OverdraftAndUnblock(t *testing.T) 
 		}
 
 		// Receive second response body (unblocked after window update).
-		req, err = stream.Recv()
-		if err != nil {
-			return err
+		for {
+			req, err = stream.Recv()
+			if err != nil {
+				return err
+			}
+			if req.GetClientWindowUpdate() != nil {
+				continue
+			}
+			break
 		}
-		if req.GetResponseBody() != nil {
+		if req.GetResponseBody() == nil {
 			return fmt.Errorf("expected response body, got %v", req)
 		}
 		if err := stream.Send(responseBodyResponse(req.GetResponseBody().GetBody())); err != nil {
@@ -5822,11 +5852,17 @@ func (s) TestFlowControl_UpstreamToSidestream_OverdraftAndUnblock(t *testing.T) 
 		}
 
 		// Receive trailers and respond with no mutations.
-		req, err = stream.Recv()
-		if err != nil {
-			return err
+		for {
+			req, err = stream.Recv()
+			if err != nil {
+				return err
+			}
+			if req.GetClientWindowUpdate() != nil {
+				continue
+			}
+			break
 		}
-		if req.GetResponseTrailers() != nil {
+		if req.GetResponseTrailers() == nil {
 			return fmt.Errorf("expected response trailers, got %v", req)
 		}
 		if err := stream.Send(responseTrailersResponse(nil, nil)); err != nil {
