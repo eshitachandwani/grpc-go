@@ -5189,7 +5189,7 @@ func (s) TestExtProcChannelRetention_UnaryRPC(t *testing.T) {
 // depleted, and unblock once a ServerWindowUpdate is delivered by the external
 // processor.
 func (s) TestFlowControl_DownstreamToSidestream_OverdraftAndUnblock(t *testing.T) {
-	const defaultWindowSize = 65535
+	const defaultWindowSize = 64*1024
 	sendWindowUpdate := make(chan struct{})
 
 	extProcAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
