@@ -72,9 +72,8 @@ func init() {
 var metadataFromOutgoingContextRaw = internal.FromOutgoingContextRaw.(func(context.Context) (metadata.MD, [][]string, bool))
 
 const (
-	defaultDeferredCloseTimeout = 5 * time.Second
-	// The default flow control window size.
-	defaultWindowSize = 65535
+	defaultDeferredCloseTimeout  = 5 * time.Second
+	defaultFlowControlWindowSize = 64 * 1024
 )
 
 func timeNow() time.Time {
@@ -486,8 +485,8 @@ func (i *clientInterceptor) NewStream(ctx context.Context, ri resolver.RPCInfo, 
 		downstreamToSideStreamPositiveUpdateCh: make(chan struct{}, 1),
 		upstreamToSideStreamPositiveUpdateCh:   make(chan struct{}, 1),
 	}
-	cs.downstreamToSideStreamWindow.Store(defaultWindowSize)
-	cs.upstreamToSideStreamWindow.Store(defaultWindowSize)
+	cs.downstreamToSideStreamWindow.Store(defaultFlowControlWindowSize)
+	cs.upstreamToSideStreamWindow.Store(defaultFlowControlWindowSize)
 
 	// When request header processing is "Send", defer creating the dataplane
 	// stream until the external processor responds, because gRPC transmits
@@ -627,10 +626,10 @@ func (cs *commonStream) newProcessingRequest(isClientMessage bool) *v3procservic
 		}
 		if !cs.config.observabilityMode {
 			req.FlowControlInit = &v3procservicepb.ProcessingRequest_FlowControlInit{
-				InitialWindowDownstreamToSidestream: defaultWindowSize,
-				InitialWindowUpstreamToSidestream:   defaultWindowSize,
-				InitialWindowSidestreamToUpstream:   defaultWindowSize,
-				InitialWindowSidestreamToDownstream: defaultWindowSize,
+				InitialWindowDownstreamToSidestream: defaultFlowControlWindowSize,
+				InitialWindowUpstreamToSidestream:   defaultFlowControlWindowSize,
+				InitialWindowSidestreamToUpstream:   defaultFlowControlWindowSize,
+				InitialWindowSidestreamToDownstream: defaultFlowControlWindowSize,
 			}
 		}
 	}
@@ -991,8 +990,7 @@ type clientStream struct {
 	upstreamToSideStreamPositiveUpdateCh chan struct{} // signals the upstream to sidestream window becoming positive
 
 	pendingRespWindowUpdate atomic.Int64 // pending response window update
-
-	pendingReqWindowUpdate atomic.Int64 // pending request window update
+	pendingReqWindowUpdate  atomic.Int64 // pending request window update
 }
 
 // recordDuration records the elapsed time since the event start timestamp
@@ -1159,9 +1157,9 @@ func (cs *clientStream) RecvMsg(m any) error {
 		// standalone processing request with window update and clear the pending
 		// update.
 		if bodySize := int64(len(streamedResp.GetBody())); bodySize > 0 {
-			if cs.pendingRespWindowUpdate.Add(bodySize) >= defaultWindowSize/2 {
+			if cs.pendingRespWindowUpdate.Add(bodySize) >= defaultFlowControlWindowSize/2 {
 				pendingUpdate := cs.pendingRespWindowUpdate.Swap(0)
-				if err := cs.sendClientWindowUpdate(pendingUpdate, 0); err != nil {
+				if err := cs.sendClientWindowUpdate(pendingUpdate, cs.pendingReqWindowUpdate.Swap(0)); err != nil {
 					return err
 				}
 			}
@@ -1253,8 +1251,8 @@ func (cs *clientStream) sendClientReqToProcServer(req *v3procservicepb.Processin
 	// Acquire flow control window for downstream to sidestream only if request
 	// body is present.
 	if bodysize := len(req.GetRequestBody().GetBody()); bodysize > 0 {
-		if s, err := cs.acquireDownstreamToSidestreamWindow(int64(bodysize)); s != nil || err != nil {
-			return s, err
+		if !cs.acquireDownstreamToSidestreamWindow(int64(bodysize)) {
+			return cs.handleClientReqProcStreamFallback()
 		}
 	}
 
@@ -1262,6 +1260,21 @@ func (cs *clientStream) sendClientReqToProcServer(req *v3procservicepb.Processin
 	case cs.procSendCh <- req:
 		return nil, nil
 	case <-cs.procStreamBypass.Done():
+		return cs.handleClientReqProcStreamFallback()
+	case <-cs.procStreamFailed.Done():
+		return nil, cs.streamError()
+	case <-cs.ctx.Done():
+		return nil, cs.streamError()
+	}
+}
+
+// handleClientReqProcStreamFallback handles processor stream bypass during
+// client request processing. If the processor stream is bypassed, it blocks
+// until all queued client messages are forwarded, and returns the dataplane
+// stream so the caller can send directly to the dataplane stream. Otherwise, it
+// returns the stream error.
+func (cs *clientStream) handleClientReqProcStreamFallback() (grpc.ClientStream, error) {
+	if cs.procStreamBypass.HasFired() {
 		if cs.reqForwardingStarted {
 			// When the drain is triggered, wait for all the queued requests to be sent
 			// to dataplane server before forwarding current request directly to
@@ -1271,11 +1284,8 @@ func (cs *clientStream) sendClientReqToProcServer(req *v3procservicepb.Processin
 			}
 		}
 		return cs.waitForDataplaneStream(cs.ctx)
-	case <-cs.procStreamFailed.Done():
-		return nil, cs.streamError()
-	case <-cs.ctx.Done():
-		return nil, cs.streamError()
 	}
+	return nil, cs.streamError()
 }
 
 // bypassProcStreamForClientMsg checks if the external processor should be
@@ -1428,9 +1438,9 @@ func (cs *clientStream) requestForwardingToDataplaneLoop(msgType protoreflect.Me
 			// standalone processing request with window update and clear the pending
 			// update.
 			if bodySize := int64(len(streamedResp.GetBody())); bodySize > 0 {
-				if cs.pendingReqWindowUpdate.Add(bodySize) >= defaultWindowSize/2 {
+				if cs.pendingReqWindowUpdate.Add(bodySize) >= defaultFlowControlWindowSize/2 {
 					pendingUpdate := cs.pendingReqWindowUpdate.Swap(0)
-					if err := cs.sendClientWindowUpdate(0, pendingUpdate); err != nil {
+					if err := cs.sendClientWindowUpdate(cs.pendingRespWindowUpdate.Swap(0), pendingUpdate); err != nil {
 						return
 					}
 				}
@@ -1486,32 +1496,33 @@ func (cs *clientStream) recvFromProcServerLoop(newStream func(context.Context, .
 			return
 		}
 
-		windowUpdate := resp.GetServerWindowUpdate()
-		deltaDownstreamToSidestream := windowUpdate.GetWindowIncrementDownstreamToSidestream()
-		if deltaDownstreamToSidestream != 0 {
-			// Add the window update to the existing window.
-			newQuota := cs.downstreamToSideStreamWindow.Add(deltaDownstreamToSidestream)
-			previousQuota := newQuota - deltaDownstreamToSidestream
-			// If the window turned from negative to positive, send a signal to the
-			// `acquireDownstreamToSidestreamWindow` function to wake it up.
-			if previousQuota <= 0 && newQuota > 0 {
-				select {
-				case cs.downstreamToSideStreamPositiveUpdateCh <- struct{}{}:
-				default:
+		if windowUpdate := resp.GetServerWindowUpdate(); windowUpdate != nil {
+			deltaDownstreamToSidestream := windowUpdate.GetWindowIncrementDownstreamToSidestream()
+			if deltaDownstreamToSidestream != 0 {
+				// Add the window update to the existing window.
+				newQuota := cs.downstreamToSideStreamWindow.Add(deltaDownstreamToSidestream)
+				previousQuota := newQuota - deltaDownstreamToSidestream
+				// If the window turned from negative to positive, send a signal to the
+				// `acquireDownstreamToSidestreamWindow` function to wake it up.
+				if previousQuota <= 0 && newQuota > 0 {
+					select {
+					case cs.downstreamToSideStreamPositiveUpdateCh <- struct{}{}:
+					default:
+					}
 				}
 			}
-		}
-		deltaUpstreamToSidestream := windowUpdate.GetWindowIncrementUpstreamToSidestream()
-		if deltaUpstreamToSidestream != 0 {
-			// Add the window update to the existing window.
-			newQuota := cs.upstreamToSideStreamWindow.Add(deltaUpstreamToSidestream)
-			previousQuota := newQuota - deltaUpstreamToSidestream
-			// If the window turned from negative to positive, send a signal to the
-			// `acquireUpstreamToSidestreamWindow` function to wake it up.
-			if previousQuota <= 0 && newQuota > 0 {
-				select {
-				case cs.upstreamToSideStreamPositiveUpdateCh <- struct{}{}:
-				default:
+			deltaUpstreamToSidestream := windowUpdate.GetWindowIncrementUpstreamToSidestream()
+			if deltaUpstreamToSidestream != 0 {
+				// Add the window update to the existing window.
+				newQuota := cs.upstreamToSideStreamWindow.Add(deltaUpstreamToSidestream)
+				previousQuota := newQuota - deltaUpstreamToSidestream
+				// If the window turned from negative to positive, send a signal to the
+				// `acquireUpstreamToSidestreamWindow` function to wake it up.
+				if previousQuota <= 0 && newQuota > 0 {
+					select {
+					case cs.upstreamToSideStreamPositiveUpdateCh <- struct{}{}:
+					default:
+					}
 				}
 			}
 		}
@@ -2028,37 +2039,30 @@ func (cs *clientStream) waitForTrailerProcessing(recvErr error) error {
 
 // acquireDownstreamToSidestreamWindow checks available flow control window for
 // downstream to sidestream. If window is positive, it deducts bodySize and
-// returns immediately. If window is <= 0, it blocks until a positive window
-// update is received, or returns the dataplane stream if bypassed, or returns
-// error if failed/canceled.
-func (cs *clientStream) acquireDownstreamToSidestreamWindow(bodySize int64) (grpc.ClientStream, error) {
-	// Do it in for loop to ensure stale channel update does not cause false
-	// unblocking.
+// returns true immediately. If window is <= 0, it blocks until a positive
+// window update is received, or returns false if bypassed, failed, or context
+// is done.
+func (cs *clientStream) acquireDownstreamToSidestreamWindow(bodySize int64) bool {
+	// Re-check the window in a loop. A signal on the buffered channel may be
+	// stale if a previous caller acquired the positive window on the fast path
+	// without draining the channel.
 	for {
 		// If enough window is available, deduct body size and return immediately.
 		if cs.downstreamToSideStreamWindow.Load() > 0 {
 			cs.downstreamToSideStreamWindow.Add(-bodySize)
-			return nil, nil
+			return true
 		}
 		// If window is not available, wait for the window to become positive or
-		// return dataplane stream if bypassed, or return error if failed/canceled.
+		// return false if bypassed, failed, or context is done.
 		select {
 		case <-cs.downstreamToSideStreamPositiveUpdateCh:
 			continue
 		case <-cs.procStreamBypass.Done():
-			if cs.reqForwardingStarted {
-				// When the drain is triggered, wait for all the queued requests to be
-				// sent to dataplane server before forwarding current request directly
-				// to dataplane server.
-				if err := cs.waitChannel(cs.requestForwardLoopDoneCh); err != nil {
-					return nil, err
-				}
-			}
-			return cs.waitForDataplaneStream(cs.ctx)
+			return false
 		case <-cs.procStreamFailed.Done():
-			return nil, cs.streamError()
+			return false
 		case <-cs.ctx.Done():
-			return nil, cs.streamError()
+			return false
 		}
 	}
 }
@@ -2069,6 +2073,9 @@ func (cs *clientStream) acquireDownstreamToSidestreamWindow(bodySize int64) (grp
 // window update is received, or returns false if bypassed, failed, or context
 // is done.
 func (cs *clientStream) acquireUpstreamToSidestreamWindow(bodySize int64) bool {
+	// Re-check the window in a loop. A signal on the buffered channel may be
+	// stale if a previous caller acquired the positive window on the fast path
+	// without draining the channel.
 	for {
 		if cs.upstreamToSideStreamWindow.Load() > 0 {
 			cs.upstreamToSideStreamWindow.Add(-bodySize)
