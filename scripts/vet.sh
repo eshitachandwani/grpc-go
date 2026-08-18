@@ -147,6 +147,7 @@ proto/grpc_lookup_v1"
 examples/features/proto/echo"
 reflection/grpc_reflection_v1"
 reflection/grpc_reflection_v1alpha"
+internal/xds/httpfilter/extproc/proto"
 XXXXX PleaseIgnoreUnused'
 
   # Error for any package comments not in generated code.
