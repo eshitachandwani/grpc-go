@@ -1007,7 +1007,11 @@ func (t *http2Server) streamContextErr(s *ServerStream) error {
 		return ErrConnClosing
 	default:
 	}
-	return ContextErr(s.ctx.Err())
+	err := s.ctx.Err()
+	if err == nil {
+		err = context.Canceled
+	}
+	return ContextErr(err)
 }
 
 // WriteHeader sends the header metadata md back to the client.
@@ -1357,12 +1361,12 @@ func (t *http2Server) closeStream(s *ServerStream, rst bool, rstCode http2.ErrCo
 	// might have been set by the `finishStream` method. Deleting the stream via
 	// `finishStream` can get blocked on flow control.
 	s.swapState(streamDone)
-	t.deleteStream(s, eosReceived)
 
 	// In case stream sending and receiving are invoked in separate
 	// goroutines (e.g., bi-directional streaming), cancel needs to be
 	// called to interrupt the potential blocking on other goroutines.
 	s.cancel()
+	t.deleteStream(s, eosReceived)
 
 	t.controlBuf.put(&cleanupStream{
 		streamID: s.id,
