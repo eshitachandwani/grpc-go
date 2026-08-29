@@ -72,6 +72,8 @@ git ls-files | not xargs -I {} sh -c '[ -n "$(tail -c 1 "{}" 2>/dev/null)" ] && 
 # - Ensure that no tabs are found in markdown files.
 not git grep -n $'\t' -- '*.md'
 
+not git grep $'\t' -- '*.md'
+
 # - Ensure all xds proto imports are renamed to *pb or *grpc.
 git grep '"github.com/envoyproxy/go-control-plane/envoy' -- '*.go' ':(exclude)*.pb.go' | not grep -v 'pb "\|grpc "'
 
