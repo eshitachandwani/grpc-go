@@ -1,6 +1,6 @@
 module google.golang.org/grpc/gcp/observability
 
-go 1.25.0
+go 1.26.0
 
 require (
 	cloud.google.com/go/logging v1.19.1
@@ -10,7 +10,7 @@ require (
 	go.opencensus.io v0.24.0
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.293.0
-	google.golang.org/grpc v1.83.0
+	google.golang.org/grpc v1.83.2
 	google.golang.org/grpc/stats/opencensus v1.0.0
 )
 

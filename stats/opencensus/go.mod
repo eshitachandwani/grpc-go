@@ -1,11 +1,11 @@
 module google.golang.org/grpc/stats/opencensus
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/google/go-cmp v0.7.0
 	go.opencensus.io v0.24.0
-	google.golang.org/grpc v1.83.0
+	google.golang.org/grpc v1.83.2
 )
 
 require (
