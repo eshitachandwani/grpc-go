@@ -222,6 +222,56 @@ func serverWindowUpdateResponse(downstreamDelta, upstreamDelta int64) *v3procser
 	}
 }
 
+func requestDrainRequestsResponse() *v3procservicepb.ProcessingResponse {
+	return &v3procservicepb.ProcessingResponse{
+		RequestDrainRequests: true,
+	}
+}
+
+func requestDrainResponsesResponse() *v3procservicepb.ProcessingResponse {
+	return &v3procservicepb.ProcessingResponse{
+		RequestDrainResponses: true,
+	}
+}
+
+func requestBodyDrainCompleteResponse() *v3procservicepb.ProcessingResponse {
+	return &v3procservicepb.ProcessingResponse{
+		Response: &v3procservicepb.ProcessingResponse_RequestBody{
+			RequestBody: &v3procservicepb.BodyResponse{
+				Response: &v3procservicepb.CommonResponse{
+					Status: v3procservicepb.CommonResponse_CONTINUE,
+					BodyMutation: &v3procservicepb.BodyMutation{
+						Mutation: &v3procservicepb.BodyMutation_StreamedResponse{
+							StreamedResponse: &v3procservicepb.StreamedBodyResponse{
+								DrainComplete: true,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func responseBodyDrainCompleteResponse() *v3procservicepb.ProcessingResponse {
+	return &v3procservicepb.ProcessingResponse{
+		Response: &v3procservicepb.ProcessingResponse_ResponseBody{
+			ResponseBody: &v3procservicepb.BodyResponse{
+				Response: &v3procservicepb.CommonResponse{
+					Status: v3procservicepb.CommonResponse_CONTINUE,
+					BodyMutation: &v3procservicepb.BodyMutation{
+						Mutation: &v3procservicepb.BodyMutation_StreamedResponse{
+							StreamedResponse: &v3procservicepb.StreamedBodyResponse{
+								DrainComplete: true,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 type testExtProcServer struct {
 	v3procservicegrpc.UnimplementedExternalProcessorServer
 	processFunc func(v3procservicegrpc.ExternalProcessor_ProcessServer) error
@@ -1007,157 +1057,6 @@ func (s) TestTrailersOnly(t *testing.T) {
 	gotTrailers := trailerMetadata.Get(respHeaderModified)
 	if len(gotTrailers) != 1 || gotTrailers[0] != "true" {
 		t.Fatalf("Client received resp-header-modified = %v, want [true]", gotTrailers)
-	}
-}
-
-// TestDraining tests the scenario where the processor server signals
-// RequestDrain: true. Verifies that the filter correctly drains any pending
-// messages and then transitions to bypass mode, causing all subsequent client
-// messages and server responses to bypass the processor.
-func (s) TestDraining(t *testing.T) {
-	const reqBodyC1Mutated = "c1_mutated"
-	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
-		// Receive the first client message c1.
-		req, err := stream.Recv()
-		if err != nil {
-			return err
-		}
-		body := req.GetRequestBody()
-		if body == nil {
-			return fmt.Errorf("proc server got %v, want RequestBody", req)
-		}
-		reqMsg := &testpb.StreamingOutputCallRequest{}
-		if err := proto.Unmarshal(body.GetBody(), reqMsg); err != nil {
-			return err
-		}
-		// Mutate the client message.
-		reqMsg.Payload.Body = append(reqMsg.Payload.Body, []byte("_mutated")...)
-		mutatedBytes, err := proto.Marshal(reqMsg)
-		if err != nil {
-			return err
-		}
-
-		// Respond to the client message with RequestDrain: true and the mutated
-		// body.
-		resp := &v3procservicepb.ProcessingResponse{
-			RequestDrain: true,
-			Response: &v3procservicepb.ProcessingResponse_RequestBody{
-				RequestBody: &v3procservicepb.BodyResponse{
-					Response: &v3procservicepb.CommonResponse{
-						Status: v3procservicepb.CommonResponse_CONTINUE,
-						BodyMutation: &v3procservicepb.BodyMutation{
-							Mutation: &v3procservicepb.BodyMutation_StreamedResponse{
-								StreamedResponse: &v3procservicepb.StreamedBodyResponse{
-									Body: mutatedBytes,
-								},
-							},
-						},
-					},
-				},
-			},
-		}
-		if err := stream.Send(resp); err != nil {
-			return err
-		}
-
-		// Since write side is closed by client filter upon drain, Recv should get
-		// EOF.
-		_, err = stream.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		return fmt.Errorf("proc server got %v from Recv after RequestDrain, want io.EOF", err)
-	})
-
-	// Start a test stub service.
-	stub := stubserver.StartTestService(t, &stubserver.StubServer{
-		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
-			// Receive first client message. Verify that it is the mutated message.
-			in1, err := stream.Recv()
-			if err != nil {
-				return err
-			}
-			if got, want := string(in1.GetPayload().GetBody()), reqBodyC1Mutated; got != want {
-				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
-			}
-
-			// Send the server message s1. This should bypass the processor as we have
-			// set RequestDrain: true.
-			if err := stream.Send(&testpb.StreamingOutputCallResponse{
-				Payload: &testpb.Payload{Body: []byte(respBodyS1)},
-			}); err != nil {
-				return err
-			}
-
-			// Receive the second client message c2 and verify that it is not mutated.
-			in2, err := stream.Recv()
-			if err != nil {
-				return err
-			}
-			if got, want := string(in2.GetPayload().GetBody()), reqBodyC2; got != want {
-				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
-			}
-
-			// Send the second server message s2. This should bypass the processor as
-			// we have set RequestDrain: true.
-			if err := stream.Send(&testpb.StreamingOutputCallResponse{
-				Payload: &testpb.Payload{Body: []byte(respBodyS2)},
-			}); err != nil {
-				return err
-			}
-			return nil
-		},
-	})
-	defer stub.Stop()
-
-	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
-		ProcessingMode: &v3procfilterpb.ProcessingMode{
-			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SKIP,
-			RequestBodyMode:     v3procfilterpb.ProcessingMode_GRPC,
-			ResponseHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
-			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
-			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
-		},
-	}, stub.Address)
-	if err != nil {
-		t.Fatalf("Failed to dial: %v", err)
-	}
-	defer cc.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
-	defer cancel()
-
-	client := testgrpc.NewTestServiceClient(cc)
-	stream, err := client.FullDuplexCall(ctx)
-	if err != nil {
-		t.Fatalf("FullDuplexCall() failed: %v", err)
-	}
-
-	// Send first request message c1.
-	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
-		t.Fatalf("stream.Send(c1) failed: %v", err)
-	}
-
-	// Receive server response s1 and verify that it is not mutated.
-	resp1, err := stream.Recv()
-	if err != nil {
-		t.Fatalf("stream.Recv(s1) failed: %v", err)
-	}
-	if got, want := string(resp1.GetPayload().GetBody()), respBodyS1; got != want {
-		t.Fatalf("Got response %q, want %q", got, want)
-	}
-
-	// Send second request message c2.
-	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC2)}}); err != nil {
-		t.Fatalf("stream.Send(c2) failed: %v", err)
-	}
-
-	// Receive second server response s2.
-	resp2, err := stream.Recv()
-	if err != nil {
-		t.Fatalf("stream.Recv(s2) failed: %v", err)
-	}
-	if got, want := string(resp2.GetPayload().GetBody()), respBodyS2; got != want {
-		t.Fatalf("Got response %q, want %q", got, want)
 	}
 }
 
@@ -2100,141 +1999,6 @@ func (s) TestUnaryFailureBodyPhaseDeny(t *testing.T) {
 	_, err = client.UnaryCall(ctx, reqMsg)
 	if got, want := status.Code(err), codes.Internal; got != want {
 		t.Fatalf("UnaryCall() returned status code: %v, want %v", got, want)
-	}
-}
-
-// TestDrainingUnderLoad tests the scenario where a processor server sends
-// RequestDrain: true. Verifies that subsequent client SendMsg and RecvMsg calls
-// correctly deliver all in-flight and bypassed payloads directly over the data
-// plane without message loss.
-func (s) TestDrainingUnderLoad(t *testing.T) {
-	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
-		// Receive request headers and return with no mutations.
-		req, err := stream.Recv()
-		if err != nil {
-			return err
-		}
-		if req.GetRequestHeaders() == nil {
-			return fmt.Errorf("proc server got %v, want request headers", req)
-		}
-		resp := requestHeadersResponse(nil, nil)
-		if err := stream.Send(resp); err != nil {
-			return err
-		}
-
-		// When the first request body message arrives, return a response with
-		// request drain set to true.
-		req, err = stream.Recv()
-		if err != nil {
-			return err
-		}
-		bodyBytes := req.GetRequestBody().GetBody()
-		resp = &v3procservicepb.ProcessingResponse{
-			RequestDrain: true,
-			Response: &v3procservicepb.ProcessingResponse_RequestBody{
-				RequestBody: &v3procservicepb.BodyResponse{
-					Response: &v3procservicepb.CommonResponse{
-						Status: v3procservicepb.CommonResponse_CONTINUE,
-						BodyMutation: &v3procservicepb.BodyMutation{
-							Mutation: &v3procservicepb.BodyMutation_StreamedResponse{
-								StreamedResponse: &v3procservicepb.StreamedBodyResponse{
-									Body: bodyBytes,
-								},
-							},
-						},
-					},
-				},
-			},
-		}
-		if err := stream.Send(resp); err != nil {
-			return err
-		}
-
-		// Continually receive any remaining in-flight body requests until EOF is
-		// reached and echo them back.
-		for {
-			req, err := stream.Recv()
-			if err == io.EOF {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			if req.GetRequestBody() != nil {
-				resp := requestBodyResponse(req.GetRequestBody().GetBody())
-				if err := stream.Send(resp); err != nil {
-					return err
-				}
-			}
-			if req.GetResponseBody() != nil {
-				resp := responseBodyResponse(req.GetRequestBody().GetBody())
-				if err := stream.Send(resp); err != nil {
-					return err
-				}
-			}
-		}
-	})
-
-	const numMessages = 50
-	stub := stubserver.StartTestService(t, &stubserver.StubServer{
-		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
-			for i := 1; i <= numMessages; i++ {
-				in, err := stream.Recv()
-				if err != nil {
-					return fmt.Errorf("backend Recv(%d) failed: %v", i, err)
-				}
-				want := fmt.Sprintf("c%d", i)
-				if got := string(in.GetPayload().GetBody()); got != want {
-					return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
-				}
-
-				if err := stream.Send(&testpb.StreamingOutputCallResponse{
-					Payload: &testpb.Payload{Body: fmt.Appendf(nil, "s%d", i)},
-				}); err != nil {
-					return fmt.Errorf("backend Send(%d) failed: %v", i, err)
-				}
-			}
-			return nil
-		},
-	})
-	defer stub.Stop()
-
-	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
-		ProcessingMode: &v3procfilterpb.ProcessingMode{
-			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SEND,
-			RequestBodyMode:     v3procfilterpb.ProcessingMode_GRPC,
-			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
-			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
-		},
-	}, stub.Address)
-	if err != nil {
-		t.Fatalf("Failed to dial: %v", err)
-	}
-	defer cc.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
-	defer cancel()
-
-	client := testgrpc.NewTestServiceClient(cc)
-	stream, err := client.FullDuplexCall(ctx)
-	if err != nil {
-		t.Fatalf("FullDuplexCall() failed: %v", err)
-	}
-
-	for i := 1; i <= numMessages; i++ {
-		if err := stream.Send(&testpb.StreamingOutputCallRequest{
-			Payload: &testpb.Payload{Body: fmt.Appendf(nil, "c%d", i)},
-		}); err != nil {
-			t.Fatalf("Client Send(%d) failed: %v", i, err)
-		}
-
-		resp, err := stream.Recv()
-		if err != nil {
-			t.Fatalf("Client Recv(%d) failed: %v", i, err)
-		}
-		want := fmt.Sprintf("s%d", i)
-		if got := string(resp.GetPayload().GetBody()); got != want {
-			t.Fatalf("Client got response %q, want %q", got, want)
-		}
 	}
 }
 
@@ -6867,5 +6631,1500 @@ func (s) TestUntrustedServerAllowedGRPCServices(t *testing.T) {
 	client := testgrpc.NewTestServiceClient(cc)
 	if _, err := client.UnaryCall(ctx, &testpb.SimpleRequest{}); err != nil {
 		t.Fatalf("UnaryCall() failed: %v", err)
+	}
+}
+
+// TestBidirectionalDraining_RequestDrain tests the scenario where the external
+// processor initiates draining for the request path by sending
+// request_drain_requests. It verifies that the filter executes the drain
+// handshake (sending and expecting drain_complete), subsequent client request
+// messages bypass the external processor directly to the dataplane backend, and
+// response messages continue to be processed by the external processor.
+func TestBidirectionalDraining_RequestDrain(t *testing.T) {
+	const reqBodyC1Mutated = "c1_mutated"
+	const respBodyS1Mutated = "s1_mutated"
+
+	drainCompleteReceived := make(chan struct{})
+
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		// Receive first client message c1.
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req.GetRequestBody() == nil {
+			return fmt.Errorf("got %v, want RequestBody", req)
+		}
+
+		// Respond with RequestDrainRequests: true and mutated c1.
+		reqMsg := &testpb.StreamingOutputCallRequest{}
+		if err := proto.Unmarshal(req.GetRequestBody().GetBody(), reqMsg); err != nil {
+			return err
+		}
+		reqMsg.Payload.Body = []byte(reqBodyC1Mutated)
+		mutatedC1, err := proto.Marshal(reqMsg)
+		if err != nil {
+			return err
+		}
+
+		resp := requestBodyResponse(mutatedC1)
+		resp.RequestDrainRequests = true
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+
+		// Receive drain_complete on RequestBody from filter.
+		drainReq, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if !drainReq.GetRequestBody().GetDrainComplete() {
+			return fmt.Errorf("got %v, want RequestBody with DrainComplete: true", drainReq)
+		}
+		close(drainCompleteReceived)
+
+		// Echo back drain_complete on RequestBody.
+		if err := stream.Send(requestBodyDrainCompleteResponse()); err != nil {
+			return err
+		}
+
+		// Response path is NOT drained, so filter should send response message s1 to ExtProc.
+		respReq, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if respReq.GetResponseBody() == nil {
+			return fmt.Errorf("got %v, want ResponseBody", respReq)
+		}
+		respMsg := &testpb.StreamingOutputCallResponse{}
+		if err := proto.Unmarshal(respReq.GetResponseBody().GetBody(), respMsg); err != nil {
+			return err
+		}
+		respMsg.Payload.Body = []byte(respBodyS1Mutated)
+		mutatedS1, err := proto.Marshal(respMsg)
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(responseBodyResponse(mutatedS1)); err != nil {
+			return err
+		}
+
+		// 6. Receive response trailers and respond.
+		trailerReq, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if trailerReq.GetResponseTrailers() == nil {
+			return fmt.Errorf("got %v, want ResponseTrailers", trailerReq)
+		}
+		if err := stream.Send(responseTrailersResponse(nil, nil)); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			// Receive c1 (mutated).
+			in1, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in1.GetPayload().GetBody()), reqBodyC1Mutated; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			// Receive c2 (bypassed / unmutated).
+			in2, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in2.GetPayload().GetBody()), reqBodyC2; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			// Send s1 (to be mutated by ExtProc).
+			if err := stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS1)},
+			}); err != nil {
+				return err
+			}
+			return nil
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:     v3procfilterpb.ProcessingMode_GRPC,
+			ResponseHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
+			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
+			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
+		},
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	// Send c1.
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
+		t.Fatalf("stream.Send(c1) failed: %v", err)
+	}
+
+	// Wait for drain_complete to be processed by ExtProc.
+	select {
+	case <-drainCompleteReceived:
+	case <-time.After(defaultTestTimeout):
+		t.Fatalf("Timed out waiting for drain_complete on processor stream")
+	}
+
+	// Send c2 (should bypass ExtProc directly to dataplane).
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC2)}}); err != nil {
+		t.Fatalf("stream.Send(c2) failed: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("stream.CloseSend() failed: %v", err)
+	}
+
+	// Receive s1 (mutated by ExtProc).
+	resp1, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv(s1) failed: %v", err)
+	}
+	if got, want := string(resp1.GetPayload().GetBody()), respBodyS1Mutated; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("stream.Recv() expected EOF, got %v", err)
+	}
+}
+
+// TestBidirectionalDraining_RequestDrain_ContinuousStreaming tests the scenario
+// where the external processor requests a request-direction drain in the middle
+// of a full-duplex streaming RPC while messages are continuously being sent and
+// received. It verifies that the filter completes the drain handshake without
+// dropping messages, routes subsequent requests directly to the dataplane,
+// continues processing responses through the external processor, and receives
+// all messages in order with no data loss.
+func TestBidirectionalDraining_RequestDrain_ContinuousStreaming(t *testing.T) {
+	const (
+		totalMessages      = 10
+		drainAfterReqCount = 5
+	)
+
+	var (
+		drainCompleteSeen atomic.Bool
+		reqCount          int
+		respCount         int
+	)
+
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		for {
+			req, err := stream.Recv()
+			if err == io.EOF {
+				t.Logf("ext_proc stream Recv EOF. Total reqCount: %d, respCount: %d", reqCount, respCount)
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+
+			switch {
+			case req.GetRequestBody() != nil:
+				t.Logf("ext_proc received RequestBody: drainComplete=%v, bodyLen=%d", req.GetRequestBody().GetDrainComplete(), len(req.GetRequestBody().GetBody()))
+				if drainCompleteSeen.Load() {
+					return fmt.Errorf("ext_proc received unexpected RequestBody after drain complete: %v", req)
+				}
+				if req.GetRequestBody().GetDrainComplete() {
+					drainCompleteSeen.Store(true)
+					resp := requestBodyDrainCompleteResponse()
+					// body := (resp.Response).(*v3procservicepb.ProcessingResponse_RequestBody)
+					// body.RequestBody. = true
+					if err := stream.Send(resp); err != nil {
+						return err
+					}
+				} else if req.GetRequestBody().GetEndOfStream() {
+					resp := requestBodyResponseWithEOS(req.GetRequestBody().GetBody(), true)
+					if err := stream.Send(resp); err != nil {
+						return err
+					}
+				} else {
+					reqCount++
+					resp := requestBodyResponse(req.GetRequestBody().GetBody())
+					if reqCount == drainAfterReqCount {
+						resp.RequestDrainRequests = true
+					}
+					if err := stream.Send(resp); err != nil {
+						return err
+					}
+				}
+			case req.GetResponseBody() != nil:
+				respCount++
+				t.Logf("ext_proc received ResponseBody #%d: bodyLen=%d", respCount, len(req.GetResponseBody().GetBody()))
+				if err := stream.Send(responseBodyResponse(req.GetResponseBody().GetBody())); err != nil {
+					return err
+				}
+			case req.GetResponseTrailers() != nil:
+				t.Logf("ext_proc received ResponseTrailers")
+				if err := stream.Send(responseTrailersResponse(nil, nil)); err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("ext_proc received unexpected message: %v", req)
+			}
+		}
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			var stubRecvCount, stubSendCount int
+			for {
+				in, err := stream.Recv()
+				if err == io.EOF {
+					t.Logf("stub server FullDuplexCallF Recv EOF. Total stubRecvCount: %d, stubSendCount: %d", stubRecvCount, stubSendCount)
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				stubRecvCount++
+				t.Logf("stub server received req #%d: %q", stubRecvCount, string(in.GetPayload().GetBody()))
+				if err := stream.Send(&testpb.StreamingOutputCallResponse{
+					Payload: in.GetPayload(),
+				}); err != nil {
+					return err
+				}
+				stubSendCount++
+			}
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:     v3procfilterpb.ProcessingMode_GRPC,
+			ResponseHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
+			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
+			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
+		},
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	recvErrCh := make(chan error, 1)
+	go func() {
+		var receivedCount int
+		for {
+			resp, err := stream.Recv()
+			if err == io.EOF {
+				if receivedCount != totalMessages {
+					recvErrCh <- fmt.Errorf("received %d messages, want %d", receivedCount, totalMessages)
+					return
+				}
+				recvErrCh <- nil
+				return
+			}
+			if err != nil {
+				recvErrCh <- fmt.Errorf("stream.Recv() failed: %w", err)
+				return
+			}
+			want := fmt.Sprintf("msg-%03d", receivedCount)
+			t.Logf("Received message %d: %v, payload: %q", receivedCount, resp, string(resp.GetPayload().GetBody()))
+			if got := string(resp.GetPayload().GetBody()); got != want {
+				recvErrCh <- fmt.Errorf("message %d body mismatch: got %q, want %q, full resp: %+v", receivedCount, got, want, resp)
+				return
+			}
+			receivedCount++
+		}
+	}()
+
+	for i := 0; i < totalMessages; i++ {
+		msg := fmt.Sprintf("msg-%03d", i)
+		if err := stream.Send(&testpb.StreamingOutputCallRequest{
+			Payload: &testpb.Payload{Body: []byte(msg)},
+		}); err != nil {
+			t.Fatalf("stream.Send(%s) failed: %v", msg, err)
+		}
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("stream.CloseSend() failed: %v", err)
+	}
+
+	select {
+	case err := <-recvErrCh:
+		if err != nil {
+			t.Fatalf("receiver goroutine error: %v", err)
+		}
+	case <-time.After(defaultTestTimeout):
+		t.Fatalf("timed out waiting for receiver goroutine to receive all %d messages", totalMessages)
+	}
+}
+
+// TestBidirectionalDraining_ResponseDrain tests the scenario where the external
+// processor initiates draining for the response path by sending
+// request_drain_responses. It verifies that the filter executes the drain
+// handshake (sending and expecting drain_complete), subsequent server response
+// messages bypass the external processor directly to the client, and request
+// messages continue to be processed by the external processor.
+func TestBidirectionalDraining_ResponseDrain(t *testing.T) {
+	const reqBodyC1Mutated = "c1_mutated"
+	const reqBodyC2Mutated = "c2_mutated"
+	const respBodyS1Mutated = "s1_mutated"
+
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		// 1. Receive client message c1 and mutate it.
+		req1, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req1.GetRequestBody() == nil {
+			return fmt.Errorf("got %v, want RequestBody", req1)
+		}
+		reqMsg1 := &testpb.StreamingOutputCallRequest{}
+		if err := proto.Unmarshal(req1.GetRequestBody().GetBody(), reqMsg1); err != nil {
+			return err
+		}
+		reqMsg1.Payload.Body = []byte(reqBodyC1Mutated)
+		mutatedC1, err := proto.Marshal(reqMsg1)
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(requestBodyResponse(mutatedC1)); err != nil {
+			return err
+		}
+
+		// 2. Receive server response s1.
+		respReq1, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if respReq1.GetResponseBody() == nil {
+			return fmt.Errorf("got %v, want ResponseBody", respReq1)
+		}
+
+		// 3. Respond to s1 with RequestDrainResponses: true and mutated s1.
+		respMsg1 := &testpb.StreamingOutputCallResponse{}
+		if err := proto.Unmarshal(respReq1.GetResponseBody().GetBody(), respMsg1); err != nil {
+			return err
+		}
+		respMsg1.Payload.Body = []byte(respBodyS1Mutated)
+		mutatedS1, err := proto.Marshal(respMsg1)
+		if err != nil {
+			return err
+		}
+		drainResp := responseBodyResponse(mutatedS1)
+		drainResp.RequestDrainResponses = true
+		if err := stream.Send(drainResp); err != nil {
+			return err
+		}
+
+		// 4. Receive ResponseBody with DrainComplete: true from filter.
+		drainReq, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if !drainReq.GetResponseBody().GetDrainComplete() {
+			return fmt.Errorf("got %v, want ResponseBody with DrainComplete: true", drainReq)
+		}
+
+		// 5. Echo back ResponseBody with DrainComplete: true.
+		if err := stream.Send(responseBodyDrainCompleteResponse()); err != nil {
+			return err
+		}
+
+		// 6. Request path is NOT drained, so client sending c2 must still reach ExtProc.
+		req2, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req2.GetRequestBody() == nil {
+			return fmt.Errorf("got %v, want RequestBody for c2", req2)
+		}
+		reqMsg2 := &testpb.StreamingOutputCallRequest{}
+		if err := proto.Unmarshal(req2.GetRequestBody().GetBody(), reqMsg2); err != nil {
+			return err
+		}
+		reqMsg2.Payload.Body = []byte(reqBodyC2Mutated)
+		mutatedC2, err := proto.Marshal(reqMsg2)
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(requestBodyResponse(mutatedC2)); err != nil {
+			return err
+		}
+
+		// Receive client half-close (CloseSend).
+		halfCloseReq, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if !halfCloseReq.GetRequestBody().GetEndOfStream() {
+			return fmt.Errorf("got %v, want RequestBody with EndOfStream: true", halfCloseReq)
+		}
+		return nil
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			// Receive c1 (mutated).
+			in1, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in1.GetPayload().GetBody()), reqBodyC1Mutated; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			// Send s1 (to be mutated by ExtProc, triggering response drain).
+			if err := stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS1)},
+			}); err != nil {
+				return err
+			}
+
+			// Receive c2 (mutated by ExtProc, confirming request direction is still active).
+			in2, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in2.GetPayload().GetBody()), reqBodyC2Mutated; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			// Send s2 (should bypass ExtProc and reach client unmutated).
+			if err := stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS2)},
+			}); err != nil {
+				return err
+			}
+			return nil
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:     v3procfilterpb.ProcessingMode_GRPC,
+			ResponseHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
+			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
+			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
+		},
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	// Send c1.
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
+		t.Fatalf("stream.Send(c1) failed: %v", err)
+	}
+
+	// Receive s1 (mutated by ExtProc, triggers response drain).
+	resp1, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv(s1) failed: %v", err)
+	}
+	if got, want := string(resp1.GetPayload().GetBody()), respBodyS1Mutated; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+
+	// Send c2 (still processed by ExtProc).
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC2)}}); err != nil {
+		t.Fatalf("stream.Send(c2) failed: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("stream.CloseSend() failed: %v", err)
+	}
+
+	// Receive s2 (bypassed, unmutated).
+	resp2, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv(s2) failed: %v", err)
+	}
+	if got, want := string(resp2.GetPayload().GetBody()), respBodyS2; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("stream.Recv() expected EOF, got %v", err)
+	}
+}
+
+// TestBidirectionalDraining_BothDirections tests the scenario where both the
+// request and response directions are independently drained on the same stream.
+// It verifies that both drain handshakes complete successfully and that
+// subsequent messages in both directions bypass the external processor directly
+// on the dataplane.
+func (s) TestBidirectionalDraining_BothDirections(t *testing.T) {
+	const reqBodyC1Mutated = "c1_mutated"
+	const respBodyS1Mutated = "s1_mutated"
+
+	drainRequestsCompleteReceived := make(chan struct{})
+
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		// 1. Receive client message c1.
+		req1, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req1.GetRequestBody() == nil {
+			return fmt.Errorf("got %v, want RequestBody", req1)
+		}
+		reqMsg1 := &testpb.StreamingOutputCallRequest{}
+		if err := proto.Unmarshal(req1.GetRequestBody().GetBody(), reqMsg1); err != nil {
+			return err
+		}
+		reqMsg1.Payload.Body = []byte(reqBodyC1Mutated)
+		mutatedC1, err := proto.Marshal(reqMsg1)
+		if err != nil {
+			return err
+		}
+
+		// Drain requests.
+		drainReqResp := requestBodyResponse(mutatedC1)
+		drainReqResp.RequestDrainRequests = true
+		if err := stream.Send(drainReqResp); err != nil {
+			return err
+		}
+
+		// Receive RequestBody with DrainComplete: true.
+		drainReq, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if !drainReq.GetRequestBody().GetDrainComplete() {
+			return fmt.Errorf("got %v, want RequestBody with DrainComplete: true", drainReq)
+		}
+		close(drainRequestsCompleteReceived)
+
+		// Echo back drain_complete for request body.
+		if err := stream.Send(requestBodyDrainCompleteResponse()); err != nil {
+			return err
+		}
+
+		// 2. Receive server response s1.
+		respReq1, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if respReq1.GetResponseBody() == nil {
+			return fmt.Errorf("got %v, want ResponseBody", respReq1)
+		}
+		respMsg1 := &testpb.StreamingOutputCallResponse{}
+		if err := proto.Unmarshal(respReq1.GetResponseBody().GetBody(), respMsg1); err != nil {
+			return err
+		}
+		respMsg1.Payload.Body = []byte(respBodyS1Mutated)
+		mutatedS1, err := proto.Marshal(respMsg1)
+		if err != nil {
+			return err
+		}
+
+		// Drain responses.
+		drainRespResp := responseBodyResponse(mutatedS1)
+		drainRespResp.RequestDrainResponses = true
+		if err := stream.Send(drainRespResp); err != nil {
+			return err
+		}
+
+		// Receive ResponseBody with DrainComplete: true.
+		drainResp, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if !drainResp.GetResponseBody().GetDrainComplete() {
+			return fmt.Errorf("got %v, want ResponseBody with DrainComplete: true", drainResp)
+		}
+
+		// Echo back drain_complete for response body.
+		if err := stream.Send(responseBodyDrainCompleteResponse()); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			// Receive c1 (mutated).
+			in1, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in1.GetPayload().GetBody()), reqBodyC1Mutated; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			// Send s1 (mutated).
+			if err := stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS1)},
+			}); err != nil {
+				return err
+			}
+
+			// Receive c2 (bypassed, unmutated).
+			in2, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in2.GetPayload().GetBody()), reqBodyC2; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			// Send s2 (bypassed, unmutated).
+			if err := stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS2)},
+			}); err != nil {
+				return err
+			}
+			return nil
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:     v3procfilterpb.ProcessingMode_GRPC,
+			ResponseHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
+			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
+			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
+		},
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	// Send c1.
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
+		t.Fatalf("stream.Send(c1) failed: %v", err)
+	}
+
+	// Wait for request drain complete.
+	select {
+	case <-drainRequestsCompleteReceived:
+	case <-time.After(defaultTestTimeout):
+		t.Fatalf("Timed out waiting for request drain_complete")
+	}
+
+	// Receive s1 (mutated, triggers response drain).
+	resp1, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv(s1) failed: %v", err)
+	}
+	if got, want := string(resp1.GetPayload().GetBody()), respBodyS1Mutated; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+
+	// Send c2 (bypassed directly).
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC2)}}); err != nil {
+		t.Fatalf("stream.Send(c2) failed: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("stream.CloseSend() failed: %v", err)
+	}
+
+	// Receive s2 (bypassed directly).
+	resp2, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv(s2) failed: %v", err)
+	}
+	if got, want := string(resp2.GetPayload().GetBody()), respBodyS2; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("stream.Recv() expected EOF, got %v", err)
+	}
+}
+
+// TestBidirectionalDraining_RequestDrainIgnoredAfterEOS tests the scenario where
+// the external processor sends request_drain_requests after the filter has
+// already sent a request body message with end_of_stream: true. It verifies
+// that the filter ignores the drain request and does not send a drain_complete
+// message.
+func (s) TestBidirectionalDraining_RequestDrainIgnoredAfterEOS(t *testing.T) {
+	const reqBodyC1Mutated = "c1_mutated"
+
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		// Receive client message c1.
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req.GetRequestBody() == nil {
+			return fmt.Errorf("got %v, want RequestBody", req)
+		}
+
+		// Receive client half-close (EndOfStream: true).
+		halfCloseReq, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if !halfCloseReq.GetRequestBody().GetEndOfStream() {
+			return fmt.Errorf("got %v, want RequestBody with EndOfStream: true", halfCloseReq)
+		}
+
+		// Now send RequestDrainRequests: true along with c1 mutation. The filter
+		// should ignore RequestDrainRequests because EOS was already sent.
+		reqMsg := &testpb.StreamingOutputCallRequest{}
+		if err := proto.Unmarshal(req.GetRequestBody().GetBody(), reqMsg); err != nil {
+			return err
+		}
+		reqMsg.Payload.Body = []byte(reqBodyC1Mutated)
+		mutatedC1, err := proto.Marshal(reqMsg)
+		if err != nil {
+			return err
+		}
+		resp := requestBodyResponse(mutatedC1)
+		resp.RequestDrainRequests = true
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+
+		// Filter must NOT send drain_complete since EOS was already sent.
+		// Sending EOS response to complete half-close on backend.
+		if err := stream.Send(requestBodyResponseWithEOS(nil, true)); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			in, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in.GetPayload().GetBody()), reqBodyC1Mutated; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+			if _, err := stream.Recv(); err != io.EOF {
+				return status.Errorf(codes.FailedPrecondition, "expected EOF, got %v", err)
+			}
+			return stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS1)},
+			})
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
+			ResponseHeaderMode: v3procfilterpb.ProcessingMode_SKIP,
+			ResponseBodyMode:   v3procfilterpb.ProcessingMode_NONE,
+		},
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	// Send c1 and immediately CloseSend.
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
+		t.Fatalf("stream.Send(c1) failed: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("stream.CloseSend() failed: %v", err)
+	}
+
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv() failed: %v", err)
+	}
+	if got, want := string(resp.GetPayload().GetBody()), respBodyS1; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("stream.Recv() expected EOF, got %v", err)
+	}
+}
+
+// TestBidirectionalDraining_ResponseDrainIgnoredAfterTrailers tests the scenario
+// where the external processor sends request_drain_responses after the filter
+// has already processed and sent response trailers. It verifies that the filter
+// ignores the drain request and does not send a drain_complete message.
+func (s) TestBidirectionalDraining_ResponseDrainIgnoredAfterTrailers(t *testing.T) {
+	const respBodyS1Mutated = "s1_mutated"
+
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		// Receive response body s1.
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req.GetResponseBody() == nil {
+			return fmt.Errorf("got %v, want ResponseBody", req)
+		}
+
+		// Receive response trailers.
+		trailerReq, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if trailerReq.GetResponseTrailers() == nil {
+			return fmt.Errorf("got %v, want ResponseTrailers", trailerReq)
+		}
+
+		// Now send RequestDrainResponses: true along with s1 mutation.
+		respMsg := &testpb.StreamingOutputCallResponse{}
+		if err := proto.Unmarshal(req.GetResponseBody().GetBody(), respMsg); err != nil {
+			return err
+		}
+		respMsg.Payload.Body = []byte(respBodyS1Mutated)
+		mutatedS1, err := proto.Marshal(respMsg)
+		if err != nil {
+			return err
+		}
+		drainResp := responseBodyResponse(mutatedS1)
+		drainResp.RequestDrainResponses = true
+		if err := stream.Send(drainResp); err != nil {
+			return err
+		}
+
+		// Send trailers response. Filter must not send drain_complete.
+		if err := stream.Send(responseTrailersResponse(nil, nil)); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			return stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS1)},
+			})
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:     v3procfilterpb.ProcessingMode_NONE,
+			ResponseHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
+			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
+			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
+		},
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv() failed: %v", err)
+	}
+	if got, want := string(resp.GetPayload().GetBody()), respBodyS1Mutated; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("stream.Recv() expected EOF, got %v", err)
+	}
+}
+
+// TestBidirectionalDraining_TerminationWithoutDrainFails_Request tests the
+// scenario where the external processor stream terminates with OK status after
+// receiving request body messages without initiating a request drain sequence,
+// when failure_mode_allow is false. It verifies that the filter treats this
+// unexpected termination as an error and fails the RPC with status code
+// Internal.
+func (s) TestBidirectionalDraining_TerminationWithoutDrainFails_Request(t *testing.T) {
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		// Receive request body c1 from client filter.
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req.GetRequestBody() == nil {
+			return fmt.Errorf("got %v, want RequestBody", req)
+		}
+		// Server terminates stream with OK status (nil error) without sending
+		// request_drain_requests.
+		return nil
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			for {
+				if _, err := stream.Recv(); err != nil {
+					return err
+				}
+			}
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode: v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:   v3procfilterpb.ProcessingMode_GRPC,
+		},
+		FailureModeAllow: false,
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
+		t.Fatalf("stream.Send() failed: %v", err)
+	}
+
+	// Must fail with Internal error because ext_proc closed with OK without draining.
+	for {
+		_, err := stream.Recv()
+		if err != nil {
+			if code := status.Code(err); code != codes.Internal {
+				t.Fatalf("stream.Recv() returned code %v (%v), want %v", code, err, codes.Internal)
+			}
+			break
+		}
+	}
+}
+
+// TestBidirectionalDraining_TerminationWithoutDrainFails_Response tests the
+// scenario where the external processor stream terminates with OK status after
+// receiving response body messages without initiating a response drain
+// sequence, when failure_mode_allow is false. It verifies that the filter treats
+// this unexpected termination as an error and fails the RPC with status code
+// Internal.
+func (s) TestBidirectionalDraining_TerminationWithoutDrainFails_Response(t *testing.T) {
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		// Receive response body s1 forwarded from dataplane server.
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req.GetResponseBody() == nil {
+			return fmt.Errorf("got %v, want ResponseBody", req)
+		}
+		// Server terminates stream with OK status (nil error) without sending
+		// request_drain_responses.
+		return nil
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			if err := stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS1)},
+			}); err != nil {
+				return err
+			}
+			_, err := stream.Recv()
+			return err
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:     v3procfilterpb.ProcessingMode_NONE,
+			ResponseHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
+			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
+			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
+		},
+		FailureModeAllow: false,
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	// Must fail with Internal error because ext_proc closed with OK without draining.
+	_, err = stream.Recv()
+	if code := status.Code(err); code != codes.Internal {
+		t.Fatalf("stream.Recv() returned code %v (%v), want %v", code, err, codes.Internal)
+	}
+}
+
+// TestBidirectionalDraining_TerminationWithoutBodyMessagesAllowed tests the
+// scenario where the external processor stream terminates with OK status before
+// any body messages have been sent. It verifies that the filter treats this as a
+// clean bypass, allowing subsequent request and response messages to proceed
+// directly on the dataplane without error.
+func (s) TestBidirectionalDraining_TerminationWithoutBodyMessagesAllowed(t *testing.T) {
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		// Immediately close the stream with OK status before any body messages.
+		return nil
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			in, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			return stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: in.GetPayload(),
+			})
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:     v3procfilterpb.ProcessingMode_GRPC,
+			ResponseHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
+			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
+			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
+		},
+		FailureModeAllow: false,
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	// Give the external processor stream time to close with OK status before
+	// sending body messages.
+	time.Sleep(50 * time.Millisecond)
+
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
+		t.Fatalf("stream.Send() failed: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("stream.CloseSend() failed: %v", err)
+	}
+
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv() failed: %v", err)
+	}
+	if got, want := string(resp.GetPayload().GetBody()), reqBodyC1; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("stream.Recv() expected EOF, got %v", err)
+	}
+}
+
+// TestBidirectionalDraining_RequestDrain_InFlightMessagesEchoed tests the
+// scenario where multiple request messages are in-flight before the external
+// processor initiates a request drain. It verifies that the external processor
+// echoes the in-flight request messages unmodified until drain_complete is
+// exchanged, that all in-flight messages reach the dataplane backend in order,
+// and that subsequent messages bypass the external processor.
+func (s) TestBidirectionalDraining_RequestDrain_InFlightMessagesEchoed(t *testing.T) {
+	const reqBodyC1Mutated = "c1_mutated"
+	const reqBodyC3 = "c3"
+
+	drainCompleteReceived := make(chan struct{})
+
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		// 1. Receive c1.
+		req1, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req1.GetRequestBody() == nil {
+			return fmt.Errorf("got %v, want RequestBody for c1", req1)
+		}
+
+		// Mutate c1 and initiate RequestDrainRequests.
+		reqMsg1 := &testpb.StreamingOutputCallRequest{}
+		if err := proto.Unmarshal(req1.GetRequestBody().GetBody(), reqMsg1); err != nil {
+			return err
+		}
+		reqMsg1.Payload.Body = []byte(reqBodyC1Mutated)
+		mutatedC1, err := proto.Marshal(reqMsg1)
+		if err != nil {
+			return err
+		}
+		drainResp := requestBodyResponse(mutatedC1)
+		drainResp.RequestDrainRequests = true
+		if err := stream.Send(drainResp); err != nil {
+			return err
+		}
+
+		// 2. Receive in-flight c2 and echo it unmodified.
+		req2, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req2.GetRequestBody() == nil {
+			return fmt.Errorf("got %v, want RequestBody for in-flight c2", req2)
+		}
+		if err := stream.Send(requestBodyResponse(req2.GetRequestBody().GetBody())); err != nil {
+			return err
+		}
+
+		// 3. Receive drain_complete on RequestBody.
+		drainReq, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if !drainReq.GetRequestBody().GetDrainComplete() {
+			return fmt.Errorf("got %v, want RequestBody with DrainComplete: true", drainReq)
+		}
+		close(drainCompleteReceived)
+
+		// 4. Echo back drain_complete on RequestBody.
+		if err := stream.Send(requestBodyDrainCompleteResponse()); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			// Receive c1 (mutated).
+			in1, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in1.GetPayload().GetBody()), reqBodyC1Mutated; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			// Receive c2 (echoed unmodified through ExtProc).
+			in2, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in2.GetPayload().GetBody()), reqBodyC2; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			// Receive c3 (bypassed directly).
+			in3, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in3.GetPayload().GetBody()), reqBodyC3; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			return stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS1)},
+			})
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
+			ResponseHeaderMode: v3procfilterpb.ProcessingMode_SKIP,
+			ResponseBodyMode:   v3procfilterpb.ProcessingMode_NONE,
+		},
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	// Send c1 and c2 in-flight.
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
+		t.Fatalf("stream.Send(c1) failed: %v", err)
+	}
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC2)}}); err != nil {
+		t.Fatalf("stream.Send(c2) failed: %v", err)
+	}
+
+	// Wait for request drain to complete.
+	select {
+	case <-drainCompleteReceived:
+	case <-time.After(defaultTestTimeout):
+		t.Fatalf("Timed out waiting for drain_complete")
+	}
+
+	// Send c3 after drain is completed.
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC3)}}); err != nil {
+		t.Fatalf("stream.Send(c3) failed: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("stream.CloseSend() failed: %v", err)
+	}
+
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv() failed: %v", err)
+	}
+	if got, want := string(resp.GetPayload().GetBody()), respBodyS1; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("stream.Recv() expected EOF, got %v", err)
+	}
+}
+
+// TestBidirectionalDraining_ResponseDrain_InFlightMessagesEchoed tests the
+// scenario where multiple response messages are in-flight before the external
+// processor initiates a response drain. It verifies that the external processor
+// echoes the in-flight response messages unmodified until drain_complete is
+// exchanged, and that the client receives all response messages in order before
+// subsequent responses bypass the external processor.
+func (s) TestBidirectionalDraining_ResponseDrain_InFlightMessagesEchoed(t *testing.T) {
+	const respBodyS1Mutated = "s1_mutated"
+	const respBodyS3 = "s3"
+
+	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
+		// 1. Receive response s1.
+		req1, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req1.GetResponseBody() == nil {
+			return fmt.Errorf("got %v, want ResponseBody for s1", req1)
+		}
+
+		// 2. Receive in-flight s2.
+		req2, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req2.GetResponseBody() == nil {
+			return fmt.Errorf("got %v, want ResponseBody for in-flight s2", req2)
+		}
+
+		// Mutate s1 and initiate RequestDrainResponses.
+		respMsg1 := &testpb.StreamingOutputCallResponse{}
+		if err := proto.Unmarshal(req1.GetResponseBody().GetBody(), respMsg1); err != nil {
+			return err
+		}
+		respMsg1.Payload.Body = []byte(respBodyS1Mutated)
+		mutatedS1, err := proto.Marshal(respMsg1)
+		if err != nil {
+			return err
+		}
+		drainResp := responseBodyResponse(mutatedS1)
+		drainResp.RequestDrainResponses = true
+		if err := stream.Send(drainResp); err != nil {
+			return err
+		}
+
+		// Echo s2 unmodified.
+		if err := stream.Send(responseBodyResponse(req2.GetResponseBody().GetBody())); err != nil {
+			return err
+		}
+
+		// 3. Receive drain_complete on ResponseBody.
+		drainReq, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if !drainReq.GetResponseBody().GetDrainComplete() {
+			return fmt.Errorf("got %v, want ResponseBody with DrainComplete: true", drainReq)
+		}
+
+		// 4. Echo back drain_complete on ResponseBody.
+		if err := stream.Send(responseBodyDrainCompleteResponse()); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	stub := stubserver.StartTestService(t, &stubserver.StubServer{
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			in, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in.GetPayload().GetBody()), reqBodyC1; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			// Send s1 and s2 in-flight.
+			if err := stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS1)},
+			}); err != nil {
+				return err
+			}
+			if err := stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS2)},
+			}); err != nil {
+				return err
+			}
+
+			// Wait for client to send c2 (confirming s1 and s2 received & drain completed).
+			in2, err := stream.Recv()
+			if err != nil {
+				return err
+			}
+			if got, want := string(in2.GetPayload().GetBody()), reqBodyC2; got != want {
+				return status.Errorf(codes.FailedPrecondition, "got body %q, want %q", got, want)
+			}
+
+			// Send s3 (bypassed directly).
+			if err := stream.Send(&testpb.StreamingOutputCallResponse{
+				Payload: &testpb.Payload{Body: []byte(respBodyS3)},
+			}); err != nil {
+				return err
+			}
+			return nil
+		},
+	})
+	defer stub.Stop()
+
+	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
+		ProcessingMode: &v3procfilterpb.ProcessingMode{
+			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SKIP,
+			RequestBodyMode:     v3procfilterpb.ProcessingMode_NONE,
+			ResponseHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
+			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
+			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
+		},
+	}, stub.Address)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	client := testgrpc.NewTestServiceClient(cc)
+	stream, err := client.FullDuplexCall(ctx)
+	if err != nil {
+		t.Fatalf("FullDuplexCall() failed: %v", err)
+	}
+
+	// Send c1.
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
+		t.Fatalf("stream.Send(c1) failed: %v", err)
+	}
+
+	// Receive s1 (mutated).
+	resp1, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv(s1) failed: %v", err)
+	}
+	if got, want := string(resp1.GetPayload().GetBody()), respBodyS1Mutated; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+
+	// Receive s2 (echoed unmodified through ExtProc).
+	resp2, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv(s2) failed: %v", err)
+	}
+	if got, want := string(resp2.GetPayload().GetBody()), respBodyS2; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+
+	// Send c2.
+	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC2)}}); err != nil {
+		t.Fatalf("stream.Send(c2) failed: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("stream.CloseSend() failed: %v", err)
+	}
+
+	// Receive s3 (bypassed directly).
+	resp3, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv(s3) failed: %v", err)
+	}
+	if got, want := string(resp3.GetPayload().GetBody()), respBodyS3; got != want {
+		t.Fatalf("Got response %q, want %q", got, want)
+	}
+
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("stream.Recv() expected EOF, got %v", err)
 	}
 }
