@@ -5326,10 +5326,24 @@ func (s) TestFlowControl_DownstreamToSidestream_BypassUnblocks(t *testing.T) {
 
 		// Wait for signal to trigger bypass via RequestDrain: true
 		<-sendDrain
-		if err := stream.Send(&v3procservicepb.ProcessingResponse{RequestDrain: true}); err != nil {
+		if err := stream.Send(&v3procservicepb.ProcessingResponse{RequestDrainRequests: true}); err != nil {
 			return err
 		}
-		return nil
+		for {
+			resp, err := stream.Recv()
+			if err == io.EOF {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if !resp.GetRequestBody().GetDrainComplete() {
+				continue
+			}
+			if err := stream.Send(requestBodyDrainCompleteResponse()); err != nil {
+				return err
+			}
+		}
 	})
 
 	stub := stubserver.StartTestService(t, &stubserver.StubServer{
@@ -5921,10 +5935,24 @@ func (s) TestFlowControl_UpstreamToSidestream_BypassUnblocks(t *testing.T) {
 
 		// Wait for signal to trigger bypass via RequestDrain: true.
 		<-sendDrain
-		if err := stream.Send(&v3procservicepb.ProcessingResponse{RequestDrain: true}); err != nil {
+		if err := stream.Send(&v3procservicepb.ProcessingResponse{RequestDrainResponses: true}); err != nil {
 			return err
 		}
-		return nil
+		for {
+			resp, err := stream.Recv()
+			if err == io.EOF {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if !resp.GetResponseBody().GetDrainComplete() {
+				continue
+			}
+			if err := stream.Send(responseBodyDrainCompleteResponse()); err != nil {
+				return err
+			}
+		}
 	})
 
 	stub := stubserver.StartTestService(t, &stubserver.StubServer{
@@ -6640,7 +6668,7 @@ func (s) TestUntrustedServerAllowedGRPCServices(t *testing.T) {
 // handshake (sending and expecting drain_complete), subsequent client request
 // messages bypass the external processor directly to the dataplane backend, and
 // response messages continue to be processed by the external processor.
-func TestBidirectionalDraining_RequestDrain(t *testing.T) {
+func (s) TestBidirectionalDraining_RequestDrain(t *testing.T) {
 	const reqBodyC1Mutated = "c1_mutated"
 	const respBodyS1Mutated = "s1_mutated"
 
@@ -6709,7 +6737,7 @@ func TestBidirectionalDraining_RequestDrain(t *testing.T) {
 			return err
 		}
 
-		// 6. Receive response trailers and respond.
+		// Receive response trailers and respond.
 		trailerReq, err := stream.Recv()
 		if err != nil {
 			return err
@@ -6818,7 +6846,7 @@ func TestBidirectionalDraining_RequestDrain(t *testing.T) {
 // dropping messages, routes subsequent requests directly to the dataplane,
 // continues processing responses through the external processor, and receives
 // all messages in order with no data loss.
-func TestBidirectionalDraining_RequestDrain_ContinuousStreaming(t *testing.T) {
+func (s) TestBidirectionalDraining_RequestDrain_ContinuousStreaming(t *testing.T) {
 	const (
 		totalMessages      = 10
 		drainAfterReqCount = 5
@@ -6834,7 +6862,6 @@ func TestBidirectionalDraining_RequestDrain_ContinuousStreaming(t *testing.T) {
 		for {
 			req, err := stream.Recv()
 			if err == io.EOF {
-				t.Logf("ext_proc stream Recv EOF. Total reqCount: %d, respCount: %d", reqCount, respCount)
 				return nil
 			}
 			if err != nil {
@@ -6843,15 +6870,12 @@ func TestBidirectionalDraining_RequestDrain_ContinuousStreaming(t *testing.T) {
 
 			switch {
 			case req.GetRequestBody() != nil:
-				t.Logf("ext_proc received RequestBody: drainComplete=%v, bodyLen=%d", req.GetRequestBody().GetDrainComplete(), len(req.GetRequestBody().GetBody()))
 				if drainCompleteSeen.Load() {
 					return fmt.Errorf("ext_proc received unexpected RequestBody after drain complete: %v", req)
 				}
 				if req.GetRequestBody().GetDrainComplete() {
 					drainCompleteSeen.Store(true)
 					resp := requestBodyDrainCompleteResponse()
-					// body := (resp.Response).(*v3procservicepb.ProcessingResponse_RequestBody)
-					// body.RequestBody. = true
 					if err := stream.Send(resp); err != nil {
 						return err
 					}
@@ -6872,12 +6896,10 @@ func TestBidirectionalDraining_RequestDrain_ContinuousStreaming(t *testing.T) {
 				}
 			case req.GetResponseBody() != nil:
 				respCount++
-				t.Logf("ext_proc received ResponseBody #%d: bodyLen=%d", respCount, len(req.GetResponseBody().GetBody()))
 				if err := stream.Send(responseBodyResponse(req.GetResponseBody().GetBody())); err != nil {
 					return err
 				}
 			case req.GetResponseTrailers() != nil:
-				t.Logf("ext_proc received ResponseTrailers")
 				if err := stream.Send(responseTrailersResponse(nil, nil)); err != nil {
 					return err
 				}
@@ -6889,24 +6911,19 @@ func TestBidirectionalDraining_RequestDrain_ContinuousStreaming(t *testing.T) {
 
 	stub := stubserver.StartTestService(t, &stubserver.StubServer{
 		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
-			var stubRecvCount, stubSendCount int
 			for {
 				in, err := stream.Recv()
 				if err == io.EOF {
-					t.Logf("stub server FullDuplexCallF Recv EOF. Total stubRecvCount: %d, stubSendCount: %d", stubRecvCount, stubSendCount)
 					return nil
 				}
 				if err != nil {
 					return err
 				}
-				stubRecvCount++
-				t.Logf("stub server received req #%d: %q", stubRecvCount, string(in.GetPayload().GetBody()))
 				if err := stream.Send(&testpb.StreamingOutputCallResponse{
 					Payload: in.GetPayload(),
 				}); err != nil {
 					return err
 				}
-				stubSendCount++
 			}
 		},
 	})
@@ -6953,9 +6970,8 @@ func TestBidirectionalDraining_RequestDrain_ContinuousStreaming(t *testing.T) {
 				return
 			}
 			want := fmt.Sprintf("msg-%03d", receivedCount)
-			t.Logf("Received message %d: %v, payload: %q", receivedCount, resp, string(resp.GetPayload().GetBody()))
 			if got := string(resp.GetPayload().GetBody()); got != want {
-				recvErrCh <- fmt.Errorf("message %d body mismatch: got %q, want %q, full resp: %+v", receivedCount, got, want, resp)
+				recvErrCh <- fmt.Errorf("message %d body mismatch: got %q, want %q", receivedCount, got, want)
 				return
 			}
 			receivedCount++
@@ -6990,13 +7006,13 @@ func TestBidirectionalDraining_RequestDrain_ContinuousStreaming(t *testing.T) {
 // handshake (sending and expecting drain_complete), subsequent server response
 // messages bypass the external processor directly to the client, and request
 // messages continue to be processed by the external processor.
-func TestBidirectionalDraining_ResponseDrain(t *testing.T) {
+func (s) TestBidirectionalDraining_ResponseDrain(t *testing.T) {
 	const reqBodyC1Mutated = "c1_mutated"
 	const reqBodyC2Mutated = "c2_mutated"
 	const respBodyS1Mutated = "s1_mutated"
 
 	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
-		// 1. Receive client message c1 and mutate it.
+		// Receive client message c1 and mutate it.
 		req1, err := stream.Recv()
 		if err != nil {
 			return err
@@ -7017,7 +7033,7 @@ func TestBidirectionalDraining_ResponseDrain(t *testing.T) {
 			return err
 		}
 
-		// 2. Receive server response s1.
+		// Receive server response s1.
 		respReq1, err := stream.Recv()
 		if err != nil {
 			return err
@@ -7026,7 +7042,7 @@ func TestBidirectionalDraining_ResponseDrain(t *testing.T) {
 			return fmt.Errorf("got %v, want ResponseBody", respReq1)
 		}
 
-		// 3. Respond to s1 with RequestDrainResponses: true and mutated s1.
+		// Respond to s1 with RequestDrainResponses: true and mutated s1.
 		respMsg1 := &testpb.StreamingOutputCallResponse{}
 		if err := proto.Unmarshal(respReq1.GetResponseBody().GetBody(), respMsg1); err != nil {
 			return err
@@ -7042,7 +7058,7 @@ func TestBidirectionalDraining_ResponseDrain(t *testing.T) {
 			return err
 		}
 
-		// 4. Receive ResponseBody with DrainComplete: true from filter.
+		// Receive ResponseBody with DrainComplete: true from filter.
 		drainReq, err := stream.Recv()
 		if err != nil {
 			return err
@@ -7051,12 +7067,12 @@ func TestBidirectionalDraining_ResponseDrain(t *testing.T) {
 			return fmt.Errorf("got %v, want ResponseBody with DrainComplete: true", drainReq)
 		}
 
-		// 5. Echo back ResponseBody with DrainComplete: true.
+		// Echo back ResponseBody with DrainComplete: true.
 		if err := stream.Send(responseBodyDrainCompleteResponse()); err != nil {
 			return err
 		}
 
-		// 6. Request path is NOT drained, so client sending c2 must still reach ExtProc.
+		// Request path is NOT drained, so client sending c2 must still reach ExtProc.
 		req2, err := stream.Recv()
 		if err != nil {
 			return err
@@ -7197,7 +7213,7 @@ func (s) TestBidirectionalDraining_BothDirections(t *testing.T) {
 	drainRequestsCompleteReceived := make(chan struct{})
 
 	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
-		// 1. Receive client message c1.
+		// Receive client message c1.
 		req1, err := stream.Recv()
 		if err != nil {
 			return err
@@ -7237,7 +7253,7 @@ func (s) TestBidirectionalDraining_BothDirections(t *testing.T) {
 			return err
 		}
 
-		// 2. Receive server response s1.
+		// Receive server response s1.
 		respReq1, err := stream.Recv()
 		if err != nil {
 			return err
@@ -7728,8 +7744,10 @@ func (s) TestBidirectionalDraining_TerminationWithoutDrainFails_Response(t *test
 // clean bypass, allowing subsequent request and response messages to proceed
 // directly on the dataplane without error.
 func (s) TestBidirectionalDraining_TerminationWithoutBodyMessagesAllowed(t *testing.T) {
+	procStreamClosed := make(chan struct{})
 	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
 		// Immediately close the stream with OK status before any body messages.
+		close(procStreamClosed)
 		return nil
 	})
 
@@ -7770,9 +7788,11 @@ func (s) TestBidirectionalDraining_TerminationWithoutBodyMessagesAllowed(t *test
 		t.Fatalf("FullDuplexCall() failed: %v", err)
 	}
 
-	// Give the external processor stream time to close with OK status before
-	// sending body messages.
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-procStreamClosed:
+	case <-time.After(defaultTestTimeout):
+		t.Fatalf("Timed out waiting for external processor stream to close")
+	}
 
 	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
 		t.Fatalf("stream.Send() failed: %v", err)
@@ -7806,7 +7826,7 @@ func (s) TestBidirectionalDraining_RequestDrain_InFlightMessagesEchoed(t *testin
 	drainCompleteReceived := make(chan struct{})
 
 	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
-		// 1. Receive c1.
+		// Receive c1.
 		req1, err := stream.Recv()
 		if err != nil {
 			return err
@@ -7831,7 +7851,7 @@ func (s) TestBidirectionalDraining_RequestDrain_InFlightMessagesEchoed(t *testin
 			return err
 		}
 
-		// 2. Receive in-flight c2 and echo it unmodified.
+		// Receive in-flight c2 and echo it unmodified.
 		req2, err := stream.Recv()
 		if err != nil {
 			return err
@@ -7843,7 +7863,7 @@ func (s) TestBidirectionalDraining_RequestDrain_InFlightMessagesEchoed(t *testin
 			return err
 		}
 
-		// 3. Receive drain_complete on RequestBody.
+		// Receive drain_complete on RequestBody.
 		drainReq, err := stream.Recv()
 		if err != nil {
 			return err
@@ -7853,7 +7873,7 @@ func (s) TestBidirectionalDraining_RequestDrain_InFlightMessagesEchoed(t *testin
 		}
 		close(drainCompleteReceived)
 
-		// 4. Echo back drain_complete on RequestBody.
+		// Echo back drain_complete on RequestBody.
 		if err := stream.Send(requestBodyDrainCompleteResponse()); err != nil {
 			return err
 		}
@@ -7964,7 +7984,7 @@ func (s) TestBidirectionalDraining_ResponseDrain_InFlightMessagesEchoed(t *testi
 	const respBodyS3 = "s3"
 
 	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
-		// 1. Receive response s1.
+		// Receive response s1.
 		req1, err := stream.Recv()
 		if err != nil {
 			return err
@@ -7973,7 +7993,7 @@ func (s) TestBidirectionalDraining_ResponseDrain_InFlightMessagesEchoed(t *testi
 			return fmt.Errorf("got %v, want ResponseBody for s1", req1)
 		}
 
-		// 2. Receive in-flight s2.
+		// Receive in-flight s2.
 		req2, err := stream.Recv()
 		if err != nil {
 			return err
@@ -8003,7 +8023,7 @@ func (s) TestBidirectionalDraining_ResponseDrain_InFlightMessagesEchoed(t *testi
 			return err
 		}
 
-		// 3. Receive drain_complete on ResponseBody.
+		// Receive drain_complete on ResponseBody.
 		drainReq, err := stream.Recv()
 		if err != nil {
 			return err
@@ -8012,7 +8032,7 @@ func (s) TestBidirectionalDraining_ResponseDrain_InFlightMessagesEchoed(t *testi
 			return fmt.Errorf("got %v, want ResponseBody with DrainComplete: true", drainReq)
 		}
 
-		// 4. Echo back drain_complete on ResponseBody.
+		// Echo back drain_complete on ResponseBody.
 		if err := stream.Send(responseBodyDrainCompleteResponse()); err != nil {
 			return err
 		}
