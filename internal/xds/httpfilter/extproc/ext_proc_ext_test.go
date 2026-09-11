@@ -7744,10 +7744,20 @@ func (s) TestBidirectionalDraining_TerminationWithoutDrainFails_Response(t *test
 // clean bypass, allowing subsequent request and response messages to proceed
 // directly on the dataplane without error.
 func (s) TestBidirectionalDraining_TerminationWithoutBodyMessagesAllowed(t *testing.T) {
-	procStreamClosed := make(chan struct{})
+	procStreamClosed := grpcsync.NewEvent()
 	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
-		// Immediately close the stream with OK status before any body messages.
-		close(procStreamClosed)
+		defer procStreamClosed.Fire()
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req.GetRequestHeaders() == nil {
+			return fmt.Errorf("got %v, want RequestHeaders", req)
+		}
+		// Respond to headers and immediately close the stream with OK status before any body messages.
+		if err := stream.Send(requestHeadersResponse(nil, nil)); err != nil {
+			return err
+		}
 		return nil
 	})
 
@@ -7766,7 +7776,7 @@ func (s) TestBidirectionalDraining_TerminationWithoutBodyMessagesAllowed(t *test
 
 	cc, err := setupTestClient(t, lisAddr, &v3procfilterpb.ExternalProcessor{
 		ProcessingMode: &v3procfilterpb.ProcessingMode{
-			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SKIP,
+			RequestHeaderMode:   v3procfilterpb.ProcessingMode_SEND,
 			RequestBodyMode:     v3procfilterpb.ProcessingMode_GRPC,
 			ResponseHeaderMode:  v3procfilterpb.ProcessingMode_SKIP,
 			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
@@ -7789,10 +7799,11 @@ func (s) TestBidirectionalDraining_TerminationWithoutBodyMessagesAllowed(t *test
 	}
 
 	select {
-	case <-procStreamClosed:
-	case <-time.After(defaultTestTimeout):
+	case <-procStreamClosed.Done():
+	case <-ctx.Done():
 		t.Fatalf("Timed out waiting for external processor stream to close")
 	}
+	time.Sleep(defaultTestShortTimeout)
 
 	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
 		t.Fatalf("stream.Send() failed: %v", err)

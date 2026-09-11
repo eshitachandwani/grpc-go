@@ -1276,9 +1276,6 @@ func (cs *clientStream) sendClientReqToProcServer(req *v3procservicepb.Processin
 	if !cs.ignoreFailureMode.Load() {
 		cs.ignoreFailureMode.Store(true)
 	}
-	if !cs.reqBodySent.Load() {
-		cs.reqBodySent.Store(true)
-	}
 
 	// Acquire flow control window for downstream to sidestream only if request
 	// body is present.
@@ -1385,20 +1382,24 @@ func (cs *clientStream) responseForwardingToProcServerLoop(msgType protoreflect.
 			cs.initiateResponseTrailerProcessing()
 			return
 		}
-		fmt.Printf("DEBUG 1: responseForwardingToProcServerLoop got: %v\n", newMsg)
 
 		req, err := cs.marshalAndCreateBodyReq(newMsg, false)
 		if err != nil {
 			cs.failProcStream(err)
 			return
 		}
-		// cs.respBodySent.Store(true)
+
+		if cs.responseBypass.HasFired() || cs.responseDrainComplete.HasFired() {
+			if err := cs.waitChannel(cs.responseDrainComplete.Done()); err != nil {
+				return
+			}
+			resp := &v3procservicepb.StreamedBodyResponse{Body: req.GetResponseBody().GetBody()}
+			cs.mutatedRespBuffer.Put(resp)
+			return
+		}
 
 		if !cs.ignoreFailureMode.Load() {
 			cs.ignoreFailureMode.Store(true)
-		}
-		if !cs.respBodySent.Load() {
-			cs.respBodySent.Store(true)
 		}
 
 		// Acquire upstream to sidestream window before sending the response body to
@@ -1408,7 +1409,7 @@ func (cs *clientStream) responseForwardingToProcServerLoop(msgType protoreflect.
 				// If proc stream is bypassed before acquiring positive window, wait for
 				// external processor server receive loop to finish before pushing this
 				// message on the mutatedRespBuffer to ensure correct order of messages.
-				if cs.responseBypass.HasFired() {
+				if cs.responseBypass.HasFired() || cs.responseDrainComplete.HasFired() {
 					if err := cs.waitChannel(cs.responseDrainComplete.Done()); err != nil {
 						return
 					}
@@ -1421,7 +1422,7 @@ func (cs *clientStream) responseForwardingToProcServerLoop(msgType protoreflect.
 
 		select {
 		case cs.procSendCh <- req:
-		case <-cs.responseDrainComplete.Done():
+		case <-cs.responseBypass.Done():
 			// If drain is triggered, wait for external processor server receive loop
 			// to finish before pushing this message on the mutatedRespBuffer
 			// to ensure correct order of messages.
@@ -1655,11 +1656,8 @@ func (cs *clientStream) recvFromProcServerLoop(newStream func(context.Context, .
 				return
 			}
 			if streamedResp.GetDrainComplete() {
-				fmt.Printf("DEBUG 2: recvFromProcServerLoop got ResponseBody drain_complete\n")
 				cs.responseDrainComplete.Fire()
-				// cs.mutatedRespBuffer.Close()
 			} else {
-				fmt.Printf("DEBUG 2: recvFromProcServerLoop putting ResponseBody into mutatedRespBuffer: len=%d\n", len(streamedResp.GetBody()))
 				cs.mutatedRespBuffer.Put(streamedResp)
 			}
 
@@ -1776,15 +1774,6 @@ func (cs *clientStream) sendToProcServerLoop() {
 				cs.procStream.CloseSend()
 				return
 			}
-			// if req.GetRequestBody() != nil {
-			// 	cs.reqBodySent.CompareAndSwap(false, true)
-			if req.GetRequestBody().GetEndOfStream() {
-				cs.requestEOSSent.Store(true)
-			}
-			// }
-			// if req.GetResponseBody() != nil {
-			// 	cs.respBodySent.Store(true)
-			// }
 			if req.GetResponseHeaders() != nil {
 				cs.responseHeaderSent.Store(true)
 			}
@@ -1811,10 +1800,37 @@ func (cs *clientStream) sendToProcServerLoop() {
 					// For non-EOF client-side send errors, fail the stream immediately.
 					cs.failProcStream(err)
 				}
-				// If Send returned io.EOF, the server closed the stream early. Let
-				// the Recv loop retrieve the actual status error from the server and
-				// propagate it.
+				// If Send returned an error (including io.EOF), wait to confirm whether
+				// the processor stream is bypassed or failed. If bypassed, forward the
+				// unsent body message to the dataplane buffer. If the stream failed,
+				// discard the message and exit.
+				select {
+				case <-cs.procStreamBypass.Done():
+					if body := req.GetRequestBody(); body != nil {
+						cs.mutatedReqBuffer.Put(&v3procservicepb.StreamedBodyResponse{
+							Body:        body.GetBody(),
+							EndOfStream: body.GetEndOfStream(),
+						})
+					}
+					if body := req.GetResponseBody(); body != nil {
+						cs.mutatedRespBuffer.Put(&v3procservicepb.StreamedBodyResponse{
+							Body:        body.GetBody(),
+							EndOfStream: body.GetEndOfStream(),
+						})
+					}
+				case <-cs.procStreamFailed.Done():
+				case <-cs.ctx.Done():
+				}
 				return
+			}
+			if body := req.GetRequestBody(); body != nil {
+				cs.reqBodySent.Store(true)
+				if body.GetEndOfStream() {
+					cs.requestEOSSent.Store(true)
+				}
+			}
+			if req.GetResponseBody() != nil {
+				cs.respBodySent.Store(true)
 			}
 		case <-cs.procStreamBypass.Done():
 			return
