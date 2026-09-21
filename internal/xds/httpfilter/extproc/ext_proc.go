@@ -517,13 +517,11 @@ func (i *clientInterceptor) NewStream(ctx context.Context, ri resolver.RPCInfo, 
 	// dataplane stream immediately.
 	if i.config.processingModes.requestHeaderMode == modeSend {
 		if err = cs.procStream.Send(cs.requestHeaders(outgoingMD, added)); err != nil {
-			logger.Infof("eshita : header send got err %v", err)
 			if err == io.EOF {
 				_, err = cs.procStream.Recv()
 			}
 			return cs.handleInitError(fmt.Errorf("failed to send client headers to external processor server: %w", err), newStream, opts...)
 		}
-		logger.Infof("eshita : header sent successfully ")
 	} else {
 		if err = cs.createDataplaneStream(cs.ctx, newStream, opts); err != nil {
 			return nil, err
@@ -1134,6 +1132,10 @@ func (cs *clientStream) CloseSend() error {
 	}
 	// If external processor stream is active, client CloseSend is sent to the
 	// processor server as request message with `EndOfStreamWithoutMessage` set.
+	if !cs.reqForwardingStarted {
+		cs.reqForwardingStarted = true
+		go cs.requestForwardingToDataplaneLoop(nil)
+	}
 	s, err = cs.sendClientReqToProcServer(cs.halfClose())
 	if s != nil {
 		cs.recordDuration(clientHalfCloseDurationMetric, &cs.clientHalfCloseStartTime)
@@ -1159,13 +1161,10 @@ func (cs *clientStream) RecvMsg(m any) error {
 	if err := cs.initiateResponseHeaderProcessing(); err != nil {
 		return err
 	}
-	logger.Infof("eshita response header processed")
 	// If all the responses from external processor server have been drained or if
 	// the external processor is bypassed, or if the response body mode is skip,
 	// then receive directly from the dataplane stream.
 	if cs.responseDrained.Load() || (cs.responseBypass.HasFired() && !cs.respForwardingStarted) || cs.config.processingModes.responseBodyMode == modeSkip {
-		// cs.responseDrained.Store(true) // check if this is needed
-		logger.Infof("eshita receiving from dataplane becuase responseDrained %v , responseBypass %v , respForwardingStarted %v , responseBodyMode %v", cs.responseDrained.Load(), cs.responseBypass.HasFired(), cs.respForwardingStarted, cs.config.processingModes.responseBodyMode)
 		return cs.recvFromDataplane(m)
 	}
 
@@ -1283,13 +1282,15 @@ func (cs *clientStream) recvFromDataplane(m any) error {
 // dataplane stream instead.
 func (cs *clientStream) sendClientReqToProcServer(req *v3procservicepb.ProcessingRequest) (grpc.ClientStream, error) {
 	// Ignoring the failureMode as we will be sending the request to proc server.
-	if !cs.ignoreFailureMode.Load() {
-		cs.ignoreFailureMode.Store(true)
+	cs.ignoreFailureMode.Store(true)
+	cs.reqBodySent.Store(true)
+	// Check procStreamClosed and requestBypass after storing ignoreFailureMode and
+	// reqBodySent to synchronize with failProcStream (which sets procStreamClosed
+	// before reading reqBodySent and ignoreFailureMode) and to avoid deducting
+	// flow-control window or racing on reqSendCh after requestBypass has fired.
+	if cs.procStreamClosed.Load() || cs.requestBypass.HasFired() {
+		return cs.handleClientReqProcStreamFallback()
 	}
-	if !cs.reqBodySent.Load() {
-		cs.reqBodySent.Store(true)
-	}
-	logger.Infof("eshita request sent set to true")
 	// Acquire flow control window for downstream to sidestream only if request
 	// body is present.
 	if bodysize := len(req.GetRequestBody().GetBody()); bodysize > 0 {
@@ -1319,9 +1320,6 @@ func (cs *clientStream) sendClientReqToProcServer(req *v3procservicepb.Processin
 // stream so the caller can send directly to the dataplane stream. Otherwise, it
 // returns the stream error.
 func (cs *clientStream) handleClientReqProcStreamFallback() (grpc.ClientStream, error) {
-	if cs.procStreamFailed.HasFired() {
-		return nil, cs.streamError()
-	}
 	if cs.reqForwardingStarted {
 		// When the drain is triggered, wait for all the queued requests to be sent
 		// to dataplane server before forwarding current request directly to
@@ -1345,7 +1343,6 @@ func (cs *clientStream) bypassProcStreamForClientMsg() (grpc.ClientStream, error
 	}
 
 	bypass := cs.requestBypass.HasFired()
-	logger.Infof("eshita send bypass: %v, reqForwardingStarted: %v", bypass, cs.reqForwardingStarted)
 	if bypass && cs.reqForwardingStarted {
 		// We started forwarding messages to the proc server and then it
 		// initiated a drain. We must wait until all messages received from
@@ -1403,17 +1400,19 @@ func (cs *clientStream) responseForwardingToProcServerLoop(msgType protoreflect.
 			return
 		}
 
-		if cs.responseBypass.HasFired() {
+		cs.ignoreFailureMode.Store(true)
+		cs.respBodySent.Store(true)
+		// Check procStreamClosed and responseBypass after storing ignoreFailureMode and
+		// respBodySent to synchronize with failProcStream (which sets procStreamClosed
+		// before reading respBodySent and ignoreFailureMode) and to avoid deducting
+		// flow-control window or racing on respSendCh after responseBypass has fired.
+		if cs.procStreamClosed.Load() || cs.responseBypass.HasFired() {
 			if err := cs.waitChannel(cs.responseDrainComplete.Done()); err != nil {
 				return
 			}
 			resp := &v3procservicepb.StreamedBodyResponse{Body: req.GetResponseBody().GetBody()}
 			cs.mutatedRespBuffer.Put(resp)
 			return
-		}
-
-		if !cs.ignoreFailureMode.Load() {
-			cs.ignoreFailureMode.Store(true)
 		}
 
 		// Acquire upstream to sidestream window before sending the response body to
@@ -1423,7 +1422,7 @@ func (cs *clientStream) responseForwardingToProcServerLoop(msgType protoreflect.
 				// If proc stream is bypassed before acquiring positive window, wait for
 				// external processor server receive loop to finish before pushing this
 				// message on the mutatedRespBuffer to ensure correct order of messages.
-				if cs.responseBypass.HasFired() || cs.responseDrainComplete.HasFired() {
+				if cs.responseBypass.HasFired() {
 					if err := cs.waitChannel(cs.responseDrainComplete.Done()); err != nil {
 						return
 					}
@@ -1432,10 +1431,6 @@ func (cs *clientStream) responseForwardingToProcServerLoop(msgType protoreflect.
 				}
 				return
 			}
-		}
-
-		if !cs.respBodySent.Load() {
-			cs.respBodySent.Store(true)
 		}
 
 		select {
@@ -1480,6 +1475,17 @@ func (cs *clientStream) requestForwardingToDataplaneLoop(msgType protoreflect.Me
 			if streamedResp.GetEndOfStream() && streamedResp.GetEndOfStreamWithoutMessage() {
 				cs.recordDuration(clientHalfCloseDurationMetric, &cs.clientHalfCloseStartTime)
 				dataplaneStream.CloseSend()
+				return
+			}
+			if msgType == nil {
+				if streamedResp.GetDrainComplete() {
+					if streamedResp.GetEndOfStream() {
+						cs.recordDuration(clientHalfCloseDurationMetric, &cs.clientHalfCloseStartTime)
+						dataplaneStream.CloseSend()
+					}
+					return
+				}
+				cs.failProcStream(fmt.Errorf("external processor injected request body when no request message type is known"))
 				return
 			}
 
@@ -1546,21 +1552,13 @@ func (cs *clientStream) recvFromProcServerLoop(newStream func(context.Context, .
 		resp, err := cs.procStream.Recv()
 		if err != nil {
 			cs.failProcStream(err)
-			logger.Infof("eshita error in prosstream.Recv %v", err)
 			return
 		}
-		// If drain is triggered for request messages,
-		if resp.GetRequestDrainRequests() {
-			if !cs.requestEOSSent.Load() {
-				cs.requestBypass.Fire()
-			}
+		if resp.GetRequestDrainRequests() && !cs.requestEOSSent.Load() {
+			cs.requestBypass.Fire()
 		}
-		if resp.GetRequestDrainResponses() {
-			if !cs.trailerSent.Load() {
-				logger.Infof("eshita response bypass firing becuase gor drain from proc server")
-				cs.responseBypass.Fire()
-				logger.Infof("eshita response bypass fired becuase gor drain from proc server")
-			}
+		if resp.GetRequestDrainResponses() && !cs.trailerSent.Load() {
+			cs.responseBypass.Fire()
 		}
 
 		if resp.GetImmediateResponse() != nil {
@@ -1625,17 +1623,13 @@ func (cs *clientStream) recvFromProcServerLoop(newStream func(context.Context, .
 				}
 
 				cs.requestDrainComplete.Store(true)
-				// If both the request and response sides are drained, close the proc
-				// stream.
-				// if cs.responseDrainComplete.HasFired() {
-				// 	cs.closeProcSend()
-				// }
 			}
 			if endOfStream {
 				cs.discardRequests.Store(true)
 			}
 			if drainComplete || endOfStream {
 				cs.mutatedReqBuffer.Close()
+				cs.maybeHalfCloseProcStream()
 			}
 		case resp.GetResponseBody() != nil:
 			if cs.config.processingModes.responseBodyMode == modeSkip {
@@ -1677,6 +1671,7 @@ func (cs *clientStream) recvFromProcServerLoop(newStream func(context.Context, .
 					return
 				}
 				cs.responseDrainComplete.Fire()
+				cs.maybeHalfCloseProcStream()
 			}
 
 		case resp.GetResponseHeaders() != nil:
@@ -1728,8 +1723,10 @@ func (cs *clientStream) recvFromProcServerLoop(newStream func(context.Context, .
 				return
 			}
 			// Signal that the response trailer is modified and ready to be sent to
-			// the client, and mark response draining complete so mutatedRespBuffer closes.
+			// the client, and half-close the processor stream as all processing is complete.
 			cs.fireResponseTrailerReady()
+			cs.closeProcSend()
+			cs.responseDrainComplete.Fire()
 		}
 	}
 }
@@ -1772,6 +1769,16 @@ func (cs *clientStream) closeProcSend() {
 	}
 }
 
+// maybeHalfCloseProcStream half-closes the external processor stream once both
+// the request and response directions have completed draining or processing.
+func (cs *clientStream) maybeHalfCloseProcStream() {
+	reqDone := cs.config.processingModes.requestBodyMode == modeSkip || cs.requestDrainComplete.Load() || cs.discardRequests.Load()
+	respDone := cs.responseDrainComplete.HasFired() || cs.responseTrailerReady.HasFired()
+	if reqDone && respDone {
+		cs.closeProcSend()
+	}
+}
+
 func (cs *clientStream) attachPendingWindowUpdates(req *v3procservicepb.ProcessingRequest) {
 	respInc := cs.pendingRespWindowUpdate.Swap(0)
 	reqInc := cs.pendingReqWindowUpdate.Swap(0)
@@ -1784,7 +1791,7 @@ func (cs *clientStream) attachPendingWindowUpdates(req *v3procservicepb.Processi
 	}
 }
 
-// sendToProcServer runs as a dedicated background goroutine that serializes all
+// sendToProcServerLoop runs as a dedicated background goroutine that serializes all
 // outbound messages to the external processor server. It listens on procSendCh
 // for messages to forward. It actively monitors stream lifecycle events:
 //   - Drain/Bypass: If procStreamBypass fires, it initiates a graceful shutdown
@@ -1798,25 +1805,61 @@ func (cs *clientStream) sendToProcServerLoop() {
 	reqSend := cs.reqSendCh
 	respSend := cs.respSendCh
 	miscSend := cs.miscSendCh
+	sendReqDrainComplete := func() {
+		if !cs.procStreamClosed.Load() && !cs.requestEOSSent.Load() {
+			req := cs.newProcessingRequest(true)
+			req.Request = &v3procservicepb.ProcessingRequest_RequestBody{
+				RequestBody: &v3procservicepb.HttpBody{DrainComplete: true},
+			}
+			cs.attachPendingWindowUpdates(req)
+			if err := cs.procStream.Send(req); err != nil {
+				if err != io.EOF {
+					// For non-EOF client-side send errors, fail the stream immediately.
+					cs.failProcStream(err)
+				}
+			}
+		}
+		reqBypass = nil
+		reqSend = nil
+	}
+	sendRespDrainComplete := func() {
+		if !cs.procStreamClosed.Load() && !cs.trailerSent.Load() {
+			req := cs.newProcessingRequest(false)
+			req.Request = &v3procservicepb.ProcessingRequest_ResponseBody{
+				ResponseBody: &v3procservicepb.HttpBody{DrainComplete: true},
+			}
+			cs.attachPendingWindowUpdates(req)
+			if err := cs.procStream.Send(req); err != nil {
+				if err != io.EOF {
+					// For non-EOF client-side send errors, fail the stream immediately.
+					cs.failProcStream(err)
+				}
+			}
+		}
+		respBypass = nil
+		respSend = nil
+	}
 	for {
 		select {
 		case req := <-reqSend:
 			if req.GetRequestBody().GetEndOfStream() {
-				logger.Infof("eshita setting request EOS to true")
 				cs.requestEOSSent.Store(true)
-				logger.Infof("eshita settted request EOS to true")
 			}
 			cs.attachPendingWindowUpdates(req)
 
 			if err := cs.procStream.Send(req); err != nil {
-				logger.Infof("eshita send request error %v", err)
 				if err != io.EOF {
 					// For non-EOF client-side send errors, fail the stream immediately.
 					cs.failProcStream(err)
 				}
 			}
 		case req := <-respSend:
-			// cs.respBodySent.Store(true)
+			if req.GetResponseHeaders() != nil {
+				cs.responseHeaderSent.Store(true)
+			}
+			if req.GetResponseTrailers() != nil {
+				cs.trailerSent.Store(true)
+			}
 			cs.attachPendingWindowUpdates(req)
 
 			if err := cs.procStream.Send(req); err != nil {
@@ -1830,12 +1873,6 @@ func (cs *clientStream) sendToProcServerLoop() {
 				cs.procStream.CloseSend()
 				return
 			}
-			if req.GetResponseHeaders() != nil {
-				cs.responseHeaderSent.Store(true)
-			}
-			if req.GetResponseTrailers() != nil {
-				cs.trailerSent.Store(true)
-			}
 			cs.attachPendingWindowUpdates(req)
 			if err := cs.procStream.Send(req); err != nil {
 				if err != io.EOF {
@@ -1844,37 +1881,9 @@ func (cs *clientStream) sendToProcServerLoop() {
 				}
 			}
 		case <-reqBypass:
-			if !cs.requestEOSSent.Load() {
-				req := cs.newProcessingRequest(true)
-				req.Request = &v3procservicepb.ProcessingRequest_RequestBody{
-					RequestBody: &v3procservicepb.HttpBody{DrainComplete: true},
-				}
-				cs.attachPendingWindowUpdates(req)
-				if err := cs.procStream.Send(req); err != nil {
-					if err != io.EOF {
-						// For non-EOF client-side send errors, fail the stream immediately.
-						cs.failProcStream(err)
-					}
-				}
-			}
-			reqBypass = nil
-			reqSend = nil
+			sendReqDrainComplete()
 		case <-respBypass:
-			if !cs.trailerSent.Load() {
-				req := cs.newProcessingRequest(false)
-				req.Request = &v3procservicepb.ProcessingRequest_ResponseBody{
-					ResponseBody: &v3procservicepb.HttpBody{DrainComplete: true},
-				}
-				cs.attachPendingWindowUpdates(req)
-				if err := cs.procStream.Send(req); err != nil {
-					if err != io.EOF {
-						// For non-EOF client-side send errors, fail the stream immediately.
-						cs.failProcStream(err)
-					}
-				}
-			}
-			respBypass = nil
-			respSend = nil
+			sendRespDrainComplete()
 		case <-cs.procStreamBypass.Done():
 			return
 		case <-cs.procStreamFailed.Done():
@@ -1900,6 +1909,9 @@ func (cs *clientStream) streamError() error {
 func (cs *clientStream) waitChannel(ch <-chan struct{}) error {
 	select {
 	case <-ch:
+		if cs.procStreamFailed.HasFired() {
+			return cs.streamError()
+		}
 		return nil
 	case <-cs.ctx.Done():
 		return cs.streamError()
@@ -1934,29 +1946,23 @@ func (cs *clientStream) failProcStream(err error) bool {
 	}
 	cs.procCancel()
 	if err == io.EOF {
-		logger.Infof("eshita fail proc stream called with error %v but the variables are reqBodySent %v, reqDrainComplete %v, reqEOSSent %v, respBodySent %v, responseDrainComplete %v, trailerSent %v", err, cs.reqBodySent.Load(), cs.requestDrainComplete.Load(), cs.requestEOSSent.Load(), cs.respBodySent.Load(), cs.responseDrainComplete.HasFired(), cs.trailerSent.Load())
-		if cs.reqBodySent.Load() && !cs.requestDrainComplete.Load() && !cs.requestEOSSent.Load() {
-			logger.Infof("eshita converting to non io.EOF error")
+		if cs.reqBodySent.Load() && !cs.requestDrainComplete.Load() && !cs.discardRequests.Load() {
 			err = fmt.Errorf("external processor stream terminated with OK status before completing request body drain")
-		}
-		if cs.respBodySent.Load() && !cs.responseDrainComplete.HasFired() && !cs.trailerSent.Load() {
-			logger.Infof("eshita converting to non io.EOF error")
+		} else if cs.respBodySent.Load() && !cs.responseDrainComplete.HasFired() && !cs.responseTrailerReady.HasFired() {
 			err = fmt.Errorf("external processor stream terminated with OK status before completing response body drain")
 		}
 	}
-	logger.Infof("eshita err %v , ignoreFailureMode %v , config.failureModeAllow %v", err, cs.ignoreFailureMode.Load(), cs.config.failureModeAllow)
 	if err != io.EOF && (cs.ignoreFailureMode.Load() || !cs.config.failureModeAllow) {
+		cs.procStreamErr.Store(status.Errorf(codes.Internal, "extproc: %v", err))
+		cs.procStreamFailed.Fire()
 		// Execute the OnFinish call options if the delegate is never called.
 		if cs.dataplaneStream == nil {
 			cs.cancel()
 			cs.callOnFinish(err)
 		}
-		cs.procStreamErr.Store(status.Errorf(codes.Internal, "extproc: %v", err))
-		cs.procStreamFailed.Fire()
 		cs.cleanupDataplane()
 		return false
 	}
-	logger.Infof("eshita trigger bypass")
 	cs.triggerBypass()
 	return true
 }
@@ -1997,20 +2003,12 @@ func (cs *clientStream) processInitialHeaders(ctx context.Context, newStream fun
 		cs.handleHeaderError(err, newStream, opts)
 		return false
 	}
-	// emchandwani : check if this is needed
 	if resp.GetRequestDrainRequests() {
-		if !cs.requestEOSSent.Load() {
-			cs.requestBypass.Fire()
-		}
+		cs.requestBypass.Fire()
 	}
 	if resp.GetRequestDrainResponses() {
-		if !cs.trailerSent.Load() {
-			logger.Infof("eshita response bypass firing becuase gor drain from proc server in initial headers")
-			cs.responseBypass.Fire()
-			logger.Infof("eshita response bypass fired becuase gor drain from proc server in initial headers")
-		}
+		cs.responseBypass.Fire()
 	}
-	// till here
 	if resp.GetImmediateResponse() != nil {
 		cs.handleImmediateResponse(resp.GetImmediateResponse(), newStream, opts)
 		return false
@@ -2075,27 +2073,21 @@ func (cs *clientStream) handleImmediateResponse(imm *v3procservicepb.ImmediateRe
 	}
 }
 
-func (cs *clientStream) triggerRequestBypass() {
-	cs.requestBypass.Fire()
-}
-
-func (cs *clientStream) triggerResponseBypass() {
-	cs.responseBypass.Fire()
-}
-
 func (cs *clientStream) triggerBypass() {
 	if cs.procStreamBypass.Fire() {
-		cs.triggerRequestBypass()
-		logger.Infof("eshita request bypass firing because called from trigger bypass")
-		cs.triggerResponseBypass()
-		logger.Infof("eshita response bypass fired because called from trigger bypass")
-		cs.fireResponseHeadersReady()
-		cs.fireResponseTrailerReady()
+		cs.requestBypass.Fire()
+		cs.responseBypass.Fire()
+		if cs.responseHeaderSent.Load() {
+			cs.fireResponseHeadersReady()
+		}
+		if cs.trailerSent.Load() {
+			cs.fireResponseTrailerReady()
+		}
 	}
 }
 
-// waitForDataplaneStream waits for the dataplane stream to be created or for
-// the context to be done. It also checks if the processor stream has not ended
+// waitForDataplaneStream waits for the dataplane stream to be created by the
+// background receive loop, or returns an error if the processor stream fails
 // abruptly with a non-io.EOF error.
 func (cs *clientStream) waitForDataplaneStream(ctx context.Context) (grpc.ClientStream, error) {
 	select {
@@ -2130,7 +2122,6 @@ func (cs *clientStream) initiateResponseHeaderProcessing() error {
 	if err != nil {
 		return err
 	}
-	logger.Infof("eshita dataplane got in header processing")
 	header, err := dataplaneStream.Header()
 	if err != nil {
 		// If the processor stream failed first and canceled cs.ctx, prefer
@@ -2156,7 +2147,7 @@ func (cs *clientStream) initiateResponseHeaderProcessing() error {
 		}
 	}
 	cs.responseHeader = header
-	if cs.config.processingModes.responseHeaderMode != modeSend || cs.procStreamBypass.HasFired() {
+	if cs.config.processingModes.responseHeaderMode != modeSend || cs.procStreamBypass.HasFired() || cs.responseBypass.HasFired() {
 		// If header does not need to be sent to the external processor, unblock
 		// the functions waiting on header modifications.
 		cs.fireResponseHeadersReady()
@@ -2164,9 +2155,13 @@ func (cs *clientStream) initiateResponseHeaderProcessing() error {
 	}
 
 	select {
-	case cs.miscSendCh <- cs.responseHeaders(header):
+	case cs.respSendCh <- cs.responseHeaders(header):
+		return nil
+	case <-cs.responseBypass.Done():
+		cs.fireResponseHeadersReady()
 		return nil
 	case <-cs.procStreamBypass.Done():
+		cs.fireResponseHeadersReady()
 		return nil
 	case <-cs.procStreamFailed.Done():
 		return cs.streamError()
@@ -2192,35 +2187,29 @@ func (cs *clientStream) initiateResponseTrailerProcessing() {
 		case <-cs.ctx.Done():
 		}
 		cs.responseTrailers = cs.responseHeader
-		cs.fireResponseTrailerReady()
-		// Signal sendToProcServerLoop that response side is complete.
-		cs.closeProcSend()
-		return
-	}
-	cs.responseTrailers = cs.dataplaneStream.Trailer()
-	// Capture the start time for response trailers after they have been
-	// successfully retrieved from the dataplane stream.
-	offset := timeSince(cs.clientHeadersStartTime)
-	cs.serverTrailersStartTime.Store(int64(offset))
-
-	// emchandwani : check if needed
-	if cs.responseBypass.HasFired() {
-		cs.waitChannel(cs.responseDrainComplete.Done())
-	}
-	// till here
-	if cs.config.processingModes.responseTrailerMode == modeSend && !cs.procStreamBypass.HasFired() && !cs.responseBypass.HasFired() {
-		select {
-		case cs.miscSendCh <- cs.commonStream.responseTrailers(cs.responseTrailers):
-		case <-cs.ctx.Done():
-		case <-cs.procStreamFailed.Done():
-		case <-cs.procStreamBypass.Done():
-		}
 	} else {
-		cs.fireResponseTrailerReady()
+		cs.responseTrailers = cs.dataplaneStream.Trailer()
+		// Capture the start time for response trailers after they have been
+		// successfully retrieved from the dataplane stream.
+		offset := timeSince(cs.clientHeadersStartTime)
+		cs.serverTrailersStartTime.Store(int64(offset))
+
+		if cs.config.processingModes.responseTrailerMode == modeSend && !cs.procStreamBypass.HasFired() && !cs.responseBypass.HasFired() {
+			select {
+			case cs.respSendCh <- cs.commonStream.responseTrailers(cs.responseTrailers):
+				cs.trailerSent.Store(true)
+				return
+			case <-cs.responseBypass.Done():
+			case <-cs.ctx.Done():
+				return
+			case <-cs.procStreamFailed.Done():
+				return
+			case <-cs.procStreamBypass.Done():
+			}
+		}
 	}
-	// Gracefully half-close the external processor stream after forwarding
-	// response trailers to signal that all responses have completely processed.
-	cs.closeProcSend()
+	cs.fireResponseTrailerReady()
+	cs.maybeHalfCloseProcStream()
 }
 
 func (cs *clientStream) waitForTrailerProcessing(recvErr error) error {

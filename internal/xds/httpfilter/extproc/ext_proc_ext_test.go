@@ -7101,6 +7101,9 @@ func (s) TestBidirectionalDraining_ResponseDrain(t *testing.T) {
 		if !halfCloseReq.GetRequestBody().GetEndOfStream() {
 			return fmt.Errorf("got %v, want RequestBody with EndOfStream: true", halfCloseReq)
 		}
+		if err := stream.Send(requestBodyResponseWithEOS(nil, true)); err != nil {
+			return err
+		}
 		return nil
 	})
 
@@ -7137,6 +7140,7 @@ func (s) TestBidirectionalDraining_ResponseDrain(t *testing.T) {
 			}); err != nil {
 				return err
 			}
+			stream.SetTrailer(metadata.Pairs("x-resp-trailer", "orig"))
 			return nil
 		},
 	})
@@ -7198,6 +7202,9 @@ func (s) TestBidirectionalDraining_ResponseDrain(t *testing.T) {
 
 	if _, err := stream.Recv(); err != io.EOF {
 		t.Fatalf("stream.Recv() expected EOF, got %v", err)
+	}
+	if got := stream.Trailer().Get("x-resp-trailer"); len(got) != 1 || got[0] != "orig" {
+		t.Fatalf("stream.Trailer()[x-resp-trailer] = %v, want [orig]", got)
 	}
 }
 
@@ -7607,7 +7614,7 @@ func (s) TestBidirectionalDraining_ResponseDrainIgnoredAfterTrailers(t *testing.
 // TestBidirectionalDraining_TerminationWithoutDrainFails_Request tests the
 // scenario where the external processor stream terminates with OK status after
 // receiving request body messages without initiating a request drain sequence,
-// when failure_mode_allow is false. It verifies that the filter treats this
+// even when failure_mode_allow is true. It verifies that the filter treats this
 // unexpected termination as an error and fails the RPC with status code
 // Internal.
 func (s) TestBidirectionalDraining_TerminationWithoutDrainFails_Request(t *testing.T) {
@@ -7641,7 +7648,7 @@ func (s) TestBidirectionalDraining_TerminationWithoutDrainFails_Request(t *testi
 			RequestHeaderMode: v3procfilterpb.ProcessingMode_SKIP,
 			RequestBodyMode:   v3procfilterpb.ProcessingMode_GRPC,
 		},
-		FailureModeAllow: false,
+		FailureModeAllow: true,
 	}, stub.Address)
 	if err != nil {
 		t.Fatalf("Failed to dial: %v", err)
@@ -7676,9 +7683,9 @@ func (s) TestBidirectionalDraining_TerminationWithoutDrainFails_Request(t *testi
 // TestBidirectionalDraining_TerminationWithoutDrainFails_Response tests the
 // scenario where the external processor stream terminates with OK status after
 // receiving response body messages without initiating a response drain
-// sequence, when failure_mode_allow is false. It verifies that the filter treats
-// this unexpected termination as an error and fails the RPC with status code
-// Internal.
+// sequence, even when failure_mode_allow is true. It verifies that the filter
+// treats this unexpected termination as an error and fails the RPC with status
+// code Internal.
 func (s) TestBidirectionalDraining_TerminationWithoutDrainFails_Response(t *testing.T) {
 	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
 		// Receive response body s1 forwarded from dataplane server.
@@ -7715,7 +7722,7 @@ func (s) TestBidirectionalDraining_TerminationWithoutDrainFails_Response(t *test
 			ResponseBodyMode:    v3procfilterpb.ProcessingMode_GRPC,
 			ResponseTrailerMode: v3procfilterpb.ProcessingMode_SEND,
 		},
-		FailureModeAllow: false,
+		FailureModeAllow: true,
 	}, stub.Address)
 	if err != nil {
 		t.Fatalf("Failed to dial: %v", err)
@@ -7744,20 +7751,20 @@ func (s) TestBidirectionalDraining_TerminationWithoutDrainFails_Response(t *test
 // clean bypass, allowing subsequent request and response messages to proceed
 // directly on the dataplane without error.
 func (s) TestBidirectionalDraining_TerminationWithoutBodyMessagesAllowed(t *testing.T) {
-	procStreamClosed := grpcsync.NewEvent()
 	lisAddr, _ := startTestExtProcessor(t, func(stream v3procservicegrpc.ExternalProcessor_ProcessServer) error {
-		defer procStreamClosed.Fire()
 		return nil
 	})
 
+	dataplaneConnected := grpcsync.NewEvent()
 	stub := stubserver.StartTestService(t, &stubserver.StubServer{
 		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			dataplaneConnected.Fire()
 			in, err := stream.Recv()
-			if err != nil {
-				return err
-			}
 			if err == io.EOF {
 				return nil
+			}
+			if err != nil {
+				return err
 			}
 			return stream.Send(&testpb.StreamingOutputCallResponse{
 				Payload: in.GetPayload(),
@@ -7791,9 +7798,9 @@ func (s) TestBidirectionalDraining_TerminationWithoutBodyMessagesAllowed(t *test
 	}
 
 	select {
-	case <-procStreamClosed.Done():
+	case <-dataplaneConnected.Done():
 	case <-ctx.Done():
-		t.Fatalf("Timed out waiting for external processor stream to close")
+		t.Fatalf("Timed out waiting for dataplane stream to connect after external processor stream closure")
 	}
 
 	if err := stream.Send(&testpb.StreamingOutputCallRequest{Payload: &testpb.Payload{Body: []byte(reqBodyC1)}}); err != nil {
