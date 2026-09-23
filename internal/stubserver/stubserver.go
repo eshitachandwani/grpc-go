@@ -28,7 +28,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
@@ -187,17 +186,13 @@ func (ss *StubServer) StartHandlerServer(sopts ...grpc.ServerOption) error {
 		panic(fmt.Sprintf("server of type %T does not implement http.Handler", ss.S))
 	}
 
-	go func() {
-		hs := &http2.Server{}
-		opts := &http2.ServeConnOpts{Handler: handler}
-		for {
-			conn, err := lis.Accept()
-			if err != nil {
-				return
-			}
-			hs.ServeConn(conn, opts)
-		}
-	}()
+	p := new(http.Protocols)
+	p.SetUnencryptedHTTP2(true)
+	hs := &http.Server{
+		Handler:   handler,
+		Protocols: p,
+	}
+	go hs.Serve(lis)
 	ss.cleanups = append(ss.cleanups, func() { lis.Close() })
 
 	return nil

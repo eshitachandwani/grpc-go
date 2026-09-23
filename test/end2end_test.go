@@ -669,16 +669,18 @@ func (te *test) listenAndServe(ts testgrpc.TestServiceServer, listen func(networ
 		if err != nil {
 			te.t.Fatal("tls.LoadX509KeyPair(server1.pem, server1.key) failed: ", err)
 		}
+		p := new(http.Protocols)
+		p.SetHTTP2(true)
 		hs := &http.Server{
 			Handler:   s,
 			TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
-		}
-		if err := http2.ConfigureServer(hs, &http2.Server{MaxConcurrentStreams: te.maxStream}); err != nil {
-			te.t.Fatal("http2.ConfigureServer(_, _) failed: ", err)
+			Protocols: p,
+			HTTP2: &http.HTTP2Config{
+				MaxConcurrentStreams: int(te.maxStream),
+			},
 		}
 		te.srv = wrapHS{hs}
-		tlsListener := tls.NewListener(lis, hs.TLSConfig)
-		go hs.Serve(tlsListener)
+		go hs.ServeTLS(lis, "", "")
 		return lis
 	}
 
