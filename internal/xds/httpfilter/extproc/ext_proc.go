@@ -451,7 +451,7 @@ func (i *clientInterceptor) NewStream(ctx context.Context, ri resolver.RPCInfo, 
 
 	// Observability mode.
 	if i.config.observabilityMode {
-		ocs := &observabilityClientStream{
+		ocs := &observabilityFilterClientStream{
 			commonStream: csCommon,
 			procRecvDone: make(chan struct{}),
 		}
@@ -728,10 +728,10 @@ func (cs *commonStream) marshalAndCreateBodyReq(m any, isClientMessage bool) (*v
 	return req, nil
 }
 
-// observabilityClientStream implements resolver.ClientStream to coordinate
+// observabilityFilterClientStream implements resolver.ClientStream to coordinate
 // message exchanges between the application client, the external processor, and
 // the backend dataplane in observability mode.
-type observabilityClientStream struct {
+type observabilityFilterClientStream struct {
 	*commonStream
 
 	procStreamBypass atomic.Bool   // set to true when the external processor stream should be bypassed
@@ -745,21 +745,21 @@ type observabilityClientStream struct {
 
 // streamError returns the appropriate error when a stream operation fails.
 // It prioritizes the external processor stream's terminal error.
-func (ocs *observabilityClientStream) streamError(err error) error {
+func (ocs *observabilityFilterClientStream) streamError(err error) error {
 	if fatalErr, ok := ocs.procStreamErr.Load().(error); ok {
 		return fatalErr
 	}
 	return err
 }
 
-func (ocs *observabilityClientStream) Header() (metadata.MD, error) {
+func (ocs *observabilityFilterClientStream) Header() (metadata.MD, error) {
 	if fatalErr, ok := ocs.procStreamErr.Load().(error); ok {
 		return nil, fatalErr
 	}
 	return ocs.initiateResponseHeaderProcessing()
 }
 
-func (ocs *observabilityClientStream) Trailer() metadata.MD {
+func (ocs *observabilityFilterClientStream) Trailer() metadata.MD {
 	if _, ok := ocs.procStreamErr.Load().(error); ok {
 		return nil
 	}
@@ -774,7 +774,7 @@ func (ocs *observabilityClientStream) Trailer() metadata.MD {
 	return nil
 }
 
-func (ocs *observabilityClientStream) CloseSend() error {
+func (ocs *observabilityFilterClientStream) CloseSend() error {
 	if fatalErr, ok := ocs.procStreamErr.Load().(error); ok {
 		return fatalErr
 	}
@@ -789,11 +789,11 @@ func (ocs *observabilityClientStream) CloseSend() error {
 	return ocs.streamError(err)
 }
 
-func (ocs *observabilityClientStream) Context() context.Context {
+func (ocs *observabilityFilterClientStream) Context() context.Context {
 	return ocs.dataplaneStream.Context()
 }
 
-func (ocs *observabilityClientStream) SendMsg(m any) error {
+func (ocs *observabilityFilterClientStream) SendMsg(m any) error {
 	if fatalErr, ok := ocs.procStreamErr.Load().(error); ok {
 		return fatalErr
 	}
@@ -806,7 +806,7 @@ func (ocs *observabilityClientStream) SendMsg(m any) error {
 	return ocs.streamError(err)
 }
 
-func (ocs *observabilityClientStream) RecvMsg(m any) error {
+func (ocs *observabilityFilterClientStream) RecvMsg(m any) error {
 	if fatalErr, ok := ocs.procStreamErr.Load().(error); ok {
 		return fatalErr
 	}
@@ -840,7 +840,7 @@ func (ocs *observabilityClientStream) RecvMsg(m any) error {
 
 // sendBodyToProcessor marshals the given message and forwards it as a request
 // or response body ProcessingRequest to the external processor stream.
-func (ocs *observabilityClientStream) sendBodyToProcessor(m any, isClientMessage bool) error {
+func (ocs *observabilityFilterClientStream) sendBodyToProcessor(m any, isClientMessage bool) error {
 	req, err := ocs.marshalAndCreateBodyReq(m, isClientMessage)
 	if err != nil {
 		return err
@@ -851,7 +851,7 @@ func (ocs *observabilityClientStream) sendBodyToProcessor(m any, isClientMessage
 // initiateResponseTrailerProcessing fetches response trailers from the
 // dataplane stream and forwards them to the external processor if configured.
 // It is guarded by responseTrailerOnce to run at most once.
-func (ocs *observabilityClientStream) initiateResponseTrailerProcessing(trailers metadata.MD) error {
+func (ocs *observabilityFilterClientStream) initiateResponseTrailerProcessing(trailers metadata.MD) error {
 	if ocs.responseTrailerOnce.Load() || !ocs.responseTrailerOnce.CompareAndSwap(false, true) {
 		return nil
 	}
@@ -877,7 +877,7 @@ func (ocs *observabilityClientStream) initiateResponseTrailerProcessing(trailers
 // stream, detects if the response is trailers-only, and forwards the response
 // headers to the external processor if configured. It is guarded by
 // responseHeaderOnce to run at most once.
-func (ocs *observabilityClientStream) initiateResponseHeaderProcessing() (metadata.MD, error) {
+func (ocs *observabilityFilterClientStream) initiateResponseHeaderProcessing() (metadata.MD, error) {
 	if ocs.responseHeaderOnce.Load() || !ocs.responseHeaderOnce.CompareAndSwap(false, true) {
 		return ocs.responseHeader, ocs.streamError(ocs.responseHeaderErr)
 	}
@@ -907,7 +907,7 @@ func (ocs *observabilityClientStream) initiateResponseHeaderProcessing() (metada
 // sendToProcessor sends a ProcessingRequest to the external processor stream.
 // If the write fails, it waits for the receive background loop to process the
 // closure and returns the resulting error.
-func (ocs *observabilityClientStream) sendToProcessor(req *v3procservicepb.ProcessingRequest) error {
+func (ocs *observabilityFilterClientStream) sendToProcessor(req *v3procservicepb.ProcessingRequest) error {
 	ocs.mu.Lock()
 	err := ocs.procStream.Send(req)
 	ocs.mu.Unlock()
@@ -934,7 +934,7 @@ func (ocs *observabilityClientStream) sendToProcessor(req *v3procservicepb.Proce
 // Per the Envoy ExtProc protobuf specification for observability mode,
 // "External processor should not send back processing response, as any
 // responses will be ignored."
-func (ocs *observabilityClientStream) discardProcessorResponsesLoop() {
+func (ocs *observabilityFilterClientStream) discardProcessorResponsesLoop() {
 	for {
 		if _, err := ocs.procStream.Recv(); err != nil {
 			ocs.failObsProcStream(err)
@@ -947,7 +947,7 @@ func (ocs *observabilityClientStream) discardProcessorResponsesLoop() {
 // stream state. If the failure is a non-EOF error and failure mode is deny, it
 // stores the error to fail the dataplane RPC. Otherwise, it enables bypass
 // mode.
-func (ocs *observabilityClientStream) failObsProcStream(err error) {
+func (ocs *observabilityFilterClientStream) failObsProcStream(err error) {
 	if !ocs.procStreamClosed.CompareAndSwap(false, true) {
 		return
 	}
