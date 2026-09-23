@@ -33,11 +33,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	estats "google.golang.org/grpc/experimental/stats"
-	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/internal/buffer"
 	"google.golang.org/grpc/internal/envconfig"
-	internalgrpclog "google.golang.org/grpc/internal/grpclog"
 	"google.golang.org/grpc/internal/grpcsync"
 	"google.golang.org/grpc/internal/optional"
 	"google.golang.org/grpc/internal/resolver"
@@ -75,8 +73,6 @@ func init() {
 }
 
 var metadataFromOutgoingContextRaw = internal.FromOutgoingContextRaw.(func(context.Context) (metadata.MD, [][]string, bool))
-var loggerC = grpclog.Component("extproc")
-var logger = internalgrpclog.NewPrefixLogger(loggerC, "[xds-extproc]")
 
 const defaultDeferredCloseTimeout = 5 * time.Second
 
@@ -500,9 +496,9 @@ func (i *clientInterceptor) NewStream(ctx context.Context, ri resolver.RPCInfo, 
 		responseHeadersReady:                   grpcsync.NewEvent(),
 		responseTrailerReady:                   grpcsync.NewEvent(),
 		dataplaneSetup:                         make(chan struct{}),
-		reqSendCh:                              make(chan *v3procservicepb.ProcessingRequest),
-		respSendCh:                             make(chan *v3procservicepb.ProcessingRequest),
-		miscSendCh:                             make(chan *v3procservicepb.ProcessingRequest),
+		downstreamSendCh:                       make(chan *v3procservicepb.ProcessingRequest),
+		upstreamSendCh:                         make(chan *v3procservicepb.ProcessingRequest),
+		controlSendCh:                          make(chan *v3procservicepb.ProcessingRequest),
 		requestForwardLoopDoneCh:               make(chan struct{}),
 		downstreamToSidestreamPositiveUpdateCh: make(chan struct{}, 1),
 		upstreamToSidestreamPositiveUpdateCh:   make(chan struct{}, 1),
@@ -977,10 +973,10 @@ type clientStream struct {
 
 	procStreamFailed      *grpcsync.Event // fired when external processor stream has closed and RPC should be failed
 	procStreamBypass      *grpcsync.Event // fired when the external processor stream should be bypassed or drained
-	requestBypass         *grpcsync.Event // fired when the external processor stream should be bypassed or drained
-	responseBypass        *grpcsync.Event
-	requestDrainComplete  atomic.Bool
-	responseDrainComplete *grpcsync.Event
+	requestBypass         *grpcsync.Event // fired when the external processor signals that client side messages should be bypassed or drained
+	responseBypass        *grpcsync.Event // fired when the external processor signals that server side messages should be bypassed or drained
+	requestDrainComplete  atomic.Bool     // tracks whether client-side drain complete response has been received
+	responseDrainComplete *grpcsync.Event // fired when server-side drain complete response has been received
 	requestEOSSent        atomic.Bool
 	reqBodySent           atomic.Bool
 	respBodySent          atomic.Bool
@@ -989,9 +985,9 @@ type clientStream struct {
 	discardRequests       atomic.Bool                                              // set when ext_proc server signals end_of_stream to stop client sends
 	mutatedReqBuffer      *buffer.Unbounded[*v3procservicepb.StreamedBodyResponse] // buffers mutated request body messages from the ext_proc server
 	reqForwardingStarted  bool                                                     // tracks whether request forwarding loop to the dataplane has started
-	reqSendCh             chan *v3procservicepb.ProcessingRequest                  // serializes writes to the external processor stream to ensure thread-safety
-	respSendCh            chan *v3procservicepb.ProcessingRequest
-	miscSendCh            chan *v3procservicepb.ProcessingRequest
+	downstreamSendCh      chan *v3procservicepb.ProcessingRequest                  // serializes client side writes to the external processor stream to ensure thread-safety
+	upstreamSendCh        chan *v3procservicepb.ProcessingRequest                  // serializes server side writes to the external processor stream to ensure thread-safety
+	controlSendCh         chan *v3procservicepb.ProcessingRequest                  // serializes window update writes to the external processor stream to ensure thread-safety
 	responseHeader        metadata.MD                                              // stores headers received from the dataplane stream
 	responseHeadersReady  *grpcsync.Event                                          // signals that response headers are ready for client
 	responseHeaderSent    atomic.Bool                                              // tracks whether response headers have been dispatched to external processor
@@ -1006,8 +1002,6 @@ type clientStream struct {
 	respForwardingStarted bool                                                     // tracks whether response forwarding loop to the external processor has started
 
 	requestForwardLoopDoneCh chan struct{} // closed when request forwarding loop finishes draining
-
-	// responseForwardLoopDoneCh chan struct{} // closed when response forwarding loop finishes draining
 
 	// The following start times are accessed concurrently across goroutines
 	// during the stream lifetime. We store them as atomic.Int64 nanosecond
@@ -1161,6 +1155,7 @@ func (cs *clientStream) RecvMsg(m any) error {
 	if err := cs.initiateResponseHeaderProcessing(); err != nil {
 		return err
 	}
+
 	// If all the responses from external processor server have been drained or if
 	// the external processor is bypassed, or if the response body mode is skip,
 	// then receive directly from the dataplane stream.
@@ -1186,8 +1181,7 @@ func (cs *clientStream) RecvMsg(m any) error {
 		cs.mutatedRespBuffer.Load()
 		if !ok {
 			// Closed channel implies that all messages from the external processor
-			// and dataplane have been received. Call recvFromDataplane to retrieve
-			// final error/EOF and process trailers.
+			// have been received. Start receiving directly from dataplane stream.
 			cs.responseDrained.Store(true)
 			return cs.recvFromDataplane(m)
 		}
@@ -1223,8 +1217,8 @@ func (cs *clientStream) SendMsg(m any) error {
 	if err != nil {
 		return err
 	}
-
 	msg := m.(proto.Message)
+
 	// Start request forwarding loop on the first send because we need the message
 	// type to send the data to the dataplane server.
 	if !cs.reqForwardingStarted {
@@ -1303,7 +1297,7 @@ func (cs *clientStream) sendClientReqToProcServer(req *v3procservicepb.Processin
 	}
 
 	select {
-	case cs.reqSendCh <- req:
+	case cs.downstreamSendCh <- req:
 		return nil, nil
 	case <-cs.requestBypass.Done():
 		return cs.handleClientReqProcStreamFallback()
@@ -1434,7 +1428,7 @@ func (cs *clientStream) responseForwardingToProcServerLoop(msgType protoreflect.
 		}
 
 		select {
-		case cs.respSendCh <- req:
+		case cs.upstreamSendCh <- req:
 		case <-cs.responseBypass.Done():
 			// If drain is triggered, wait for external processor server receive loop
 			// to finish before pushing this message on the mutatedRespBuffer
@@ -1477,17 +1471,6 @@ func (cs *clientStream) requestForwardingToDataplaneLoop(msgType protoreflect.Me
 				dataplaneStream.CloseSend()
 				return
 			}
-			if msgType == nil {
-				if streamedResp.GetDrainComplete() {
-					if streamedResp.GetEndOfStream() {
-						cs.recordDuration(clientHalfCloseDurationMetric, &cs.clientHalfCloseStartTime)
-						dataplaneStream.CloseSend()
-					}
-					return
-				}
-				cs.failProcStream(fmt.Errorf("external processor injected request body when no request message type is known"))
-				return
-			}
 
 			newMsg := msgType.New().Interface()
 			if err := proto.Unmarshal(streamedResp.GetBody(), newMsg); err != nil {
@@ -1496,16 +1479,6 @@ func (cs *clientStream) requestForwardingToDataplaneLoop(msgType protoreflect.Me
 			}
 			if err := dataplaneStream.SendMsg(newMsg); err != nil {
 				cs.cancelStream(err)
-				return
-			}
-			// If the drain complete signal is received, it means that the external
-			// processor server has processed all the request messages and we can
-			// return safely.
-			if streamedResp.GetDrainComplete() {
-				if streamedResp.GetEndOfStream() {
-					cs.recordDuration(clientHalfCloseDurationMetric, &cs.clientHalfCloseStartTime)
-					dataplaneStream.CloseSend()
-				}
 				return
 			}
 
@@ -1520,6 +1493,11 @@ func (cs *clientStream) requestForwardingToDataplaneLoop(msgType protoreflect.Me
 					}
 				}
 			}
+			if streamedResp.GetEndOfStream() {
+				cs.recordDuration(clientHalfCloseDurationMetric, &cs.clientHalfCloseStartTime)
+				dataplaneStream.CloseSend()
+				return
+			}
 		case <-cs.ctx.Done():
 			return
 		case <-cs.procStreamFailed.Done():
@@ -1532,8 +1510,10 @@ func (cs *clientStream) requestForwardingToDataplaneLoop(msgType protoreflect.Me
 // processor server and redirects them according to the response type.
 func (cs *clientStream) recvFromProcServerLoop(newStream func(context.Context, ...grpc.CallOption) (grpc.ClientStream, error), opts []grpc.CallOption) {
 	defer func() {
-		// Close mutatedReqBuffer and fire drain complete events to indicate completion
-		// of receiving the mutated requests/responses.
+		// Close mutatedReqBuffer to indicate completion of receiving the mutated
+		// requests. Do not close mutatedResponseBuffer because we might push the
+		// message that has been read when drain is triggered, instead fire the
+		// response drain complete event.
 		cs.mutatedReqBuffer.Close()
 		cs.responseDrainComplete.Fire()
 	}()
@@ -1613,7 +1593,8 @@ func (cs *clientStream) recvFromProcServerLoop(newStream func(context.Context, .
 			// The server's final drain_complete response may or may not carry a body.
 			// A standalone drain_complete carries none, and forwarding it would
 			// inject a spurious empty message into the data plane stream.
-			if !drainComplete || len(streamedResp.GetBody()) > 0 {
+			isStandaloneDrain := drainComplete && len(streamedResp.GetBody()) == 0
+			if !isStandaloneDrain {
 				cs.mutatedReqBuffer.Put(streamedResp)
 			}
 			if drainComplete {
@@ -1662,7 +1643,8 @@ func (cs *clientStream) recvFromProcServerLoop(newStream func(context.Context, .
 				cs.failProcStream(fmt.Errorf("external processor unexpectedly set end of stream in response body mutation"))
 				return
 			}
-			if !drainComplete || len(streamedResp.GetBody()) > 0 {
+			isStandaloneDrain := drainComplete && len(streamedResp.GetBody()) == 0
+			if !isStandaloneDrain {
 				cs.mutatedRespBuffer.Put(streamedResp)
 			}
 			if drainComplete {
@@ -1758,11 +1740,11 @@ func (cs *clientStream) applyMutations(mutation *v3procservicepb.HeaderMutation,
 	return cs.config.mutationRules.ApplyRemovals(mutation.GetRemoveHeaders(), md)
 }
 
-// closeProcSend signals that the caller is done sending on its direction by
-// pushing a nil sentinel onto miscSendCh.
+// closeProcSend gracefully half-closes the external processor stream across the
+// background send goroutine by pushing a nil sentinel onto miscSendCh.
 func (cs *clientStream) closeProcSend() {
 	select {
-	case cs.miscSendCh <- nil:
+	case cs.controlSendCh <- nil:
 	case <-cs.ctx.Done():
 	case <-cs.procStreamFailed.Done():
 	case <-cs.procStreamBypass.Done():
@@ -1770,7 +1752,10 @@ func (cs *clientStream) closeProcSend() {
 }
 
 // maybeHalfCloseProcStream half-closes the external processor stream once both
-// the request and response directions have completed draining or processing.
+// the request and response directions have completed draining or processing. Do
+// not close the proc stream after sending drain complete to the server as
+// server might still need to echo back responses and filter needs to send flow
+// control window updates for that.
 func (cs *clientStream) maybeHalfCloseProcStream() {
 	reqDone := cs.config.processingModes.requestBodyMode == modeSkip || cs.requestDrainComplete.Load() || cs.discardRequests.Load()
 	respDone := cs.responseDrainComplete.HasFired() || cs.responseTrailerReady.HasFired()
@@ -1791,9 +1776,10 @@ func (cs *clientStream) attachPendingWindowUpdates(req *v3procservicepb.Processi
 	}
 }
 
-// sendToProcServerLoop runs as a dedicated background goroutine that serializes all
-// outbound messages to the external processor server. It listens on procSendCh
-// for messages to forward. It actively monitors stream lifecycle events:
+// sendToProcServerLoop runs as a dedicated background goroutine that serializes
+// all outbound messages to the external processor server. It listens on the
+// downstreamSendCh and upstreamSendCh for messages to forward. It actively
+// monitors stream lifecycle events:
 //   - Drain/Bypass: If procStreamBypass fires, it initiates a graceful shutdown
 //     by sending a half-close (CloseSend) to the external processor server and
 //     returning so that no more messages can be sent to the external processor.
@@ -1802,9 +1788,9 @@ func (cs *clientStream) attachPendingWindowUpdates(req *v3procservicepb.Processi
 func (cs *clientStream) sendToProcServerLoop() {
 	reqBypass := cs.requestBypass.Done()
 	respBypass := cs.responseBypass.Done()
-	reqSend := cs.reqSendCh
-	respSend := cs.respSendCh
-	miscSend := cs.miscSendCh
+	downstreamSendCh := cs.downstreamSendCh
+	upstreamSendCh := cs.upstreamSendCh
+
 	sendReqDrainComplete := func() {
 		if !cs.procStreamClosed.Load() && !cs.requestEOSSent.Load() {
 			req := cs.newProcessingRequest(true)
@@ -1819,9 +1805,13 @@ func (cs *clientStream) sendToProcServerLoop() {
 				}
 			}
 		}
+		// Once drain complete is sent, we will never send another message on this
+		// channel. So we can set reqBypass and downstreamSendCh to nil to stop
+		// listening on them.
 		reqBypass = nil
-		reqSend = nil
+		downstreamSendCh = nil
 	}
+
 	sendRespDrainComplete := func() {
 		if !cs.procStreamClosed.Load() && !cs.trailerSent.Load() {
 			req := cs.newProcessingRequest(false)
@@ -1836,12 +1826,16 @@ func (cs *clientStream) sendToProcServerLoop() {
 				}
 			}
 		}
+		// Once drain complete is sent, we will never send another message on this
+		// channel. So we can set respBypass and upstreamSendCh to nil to stop
+		// listening on them.
 		respBypass = nil
-		respSend = nil
+		upstreamSendCh = nil
 	}
+
 	for {
 		select {
-		case req := <-reqSend:
+		case req := <-downstreamSendCh:
 			if req.GetRequestBody().GetEndOfStream() {
 				cs.requestEOSSent.Store(true)
 			}
@@ -1853,7 +1847,7 @@ func (cs *clientStream) sendToProcServerLoop() {
 					cs.failProcStream(err)
 				}
 			}
-		case req := <-respSend:
+		case req := <-upstreamSendCh:
 			if req.GetResponseHeaders() != nil {
 				cs.responseHeaderSent.Store(true)
 			}
@@ -1868,7 +1862,7 @@ func (cs *clientStream) sendToProcServerLoop() {
 					cs.failProcStream(err)
 				}
 			}
-		case req := <-miscSend:
+		case req := <-cs.controlSendCh:
 			if req == nil {
 				cs.procStream.CloseSend()
 				return
@@ -1945,6 +1939,11 @@ func (cs *clientStream) failProcStream(err error) bool {
 		return !cs.procStreamFailed.HasFired()
 	}
 	cs.procCancel()
+
+	// If the proc stream fails with io.EOF error, downstream and upstream message
+	// draining should have completed if body messages were sent. If the stream
+	// ends before completing the draining, it is treated as stream terminated
+	// with non-OK failure.
 	if err == io.EOF {
 		if cs.reqBodySent.Load() && !cs.requestDrainComplete.Load() && !cs.discardRequests.Load() {
 			err = fmt.Errorf("external processor stream terminated with OK status before completing request body drain")
@@ -2086,8 +2085,8 @@ func (cs *clientStream) triggerBypass() {
 	}
 }
 
-// waitForDataplaneStream waits for the dataplane stream to be created by the
-// background receive loop, or returns an error if the processor stream fails
+// waitForDataplaneStream waits for the dataplane stream to be created or for
+// the context to be done. It also checks if the processor stream has not ended
 // abruptly with a non-io.EOF error.
 func (cs *clientStream) waitForDataplaneStream(ctx context.Context) (grpc.ClientStream, error) {
 	select {
@@ -2155,7 +2154,7 @@ func (cs *clientStream) initiateResponseHeaderProcessing() error {
 	}
 
 	select {
-	case cs.respSendCh <- cs.responseHeaders(header):
+	case cs.upstreamSendCh <- cs.responseHeaders(header):
 		return nil
 	case <-cs.responseBypass.Done():
 		cs.fireResponseHeadersReady()
@@ -2171,9 +2170,6 @@ func (cs *clientStream) initiateResponseHeaderProcessing() error {
 }
 
 func (cs *clientStream) initiateResponseTrailerProcessing() {
-	if cs.procStreamFailed.HasFired() {
-		return
-	}
 	if cs.responseTrailerOnce.Load() || !cs.responseTrailerOnce.CompareAndSwap(false, true) {
 		return
 	}
@@ -2187,27 +2183,31 @@ func (cs *clientStream) initiateResponseTrailerProcessing() {
 		case <-cs.ctx.Done():
 		}
 		cs.responseTrailers = cs.responseHeader
-	} else {
-		cs.responseTrailers = cs.dataplaneStream.Trailer()
-		// Capture the start time for response trailers after they have been
-		// successfully retrieved from the dataplane stream.
-		offset := timeSince(cs.clientHeadersStartTime)
-		cs.serverTrailersStartTime.Store(int64(offset))
+		cs.fireResponseTrailerReady()
+		cs.maybeHalfCloseProcStream()
+		return
+	}
 
-		if cs.config.processingModes.responseTrailerMode == modeSend && !cs.procStreamBypass.HasFired() && !cs.responseBypass.HasFired() {
-			select {
-			case cs.respSendCh <- cs.commonStream.responseTrailers(cs.responseTrailers):
-				cs.trailerSent.Store(true)
-				return
-			case <-cs.responseBypass.Done():
-			case <-cs.ctx.Done():
-				return
-			case <-cs.procStreamFailed.Done():
-				return
-			case <-cs.procStreamBypass.Done():
-			}
+	cs.responseTrailers = cs.dataplaneStream.Trailer()
+	// Capture the start time for response trailers after they have been
+	// successfully retrieved from the dataplane stream.
+	offset := timeSince(cs.clientHeadersStartTime)
+	cs.serverTrailersStartTime.Store(int64(offset))
+
+	if cs.config.processingModes.responseTrailerMode == modeSend && !cs.procStreamBypass.HasFired() && !cs.responseBypass.HasFired() {
+		select {
+		case cs.upstreamSendCh <- cs.commonStream.responseTrailers(cs.responseTrailers):
+			cs.trailerSent.Store(true)
+			return
+		case <-cs.responseBypass.Done():
+		case <-cs.ctx.Done():
+			return
+		case <-cs.procStreamFailed.Done():
+			return
+		case <-cs.procStreamBypass.Done():
 		}
 	}
+
 	cs.fireResponseTrailerReady()
 	cs.maybeHalfCloseProcStream()
 }
@@ -2306,7 +2306,7 @@ func (cs *clientStream) sendClientWindowUpdate() error {
 	}
 
 	select {
-	case cs.miscSendCh <- req:
+	case cs.controlSendCh <- req:
 		return nil
 	case <-cs.procStreamBypass.Done():
 		return nil
